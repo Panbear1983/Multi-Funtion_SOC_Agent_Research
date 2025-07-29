@@ -14,6 +14,7 @@ _**Completion State:**_ a formal policy is enacted, stakeholder buy-in is secure
 - Tenable (enterprise vulnerability management platform)
 - Azure Virtual Machines (Nessus scan engine + scan targets)
 - PowerShell & BASH (remediation scripts)
+- Microsoft Defender Endpoint (KQL Log Analysis)
 
 ---
 
