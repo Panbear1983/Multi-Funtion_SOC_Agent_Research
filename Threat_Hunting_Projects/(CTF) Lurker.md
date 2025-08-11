@@ -28,15 +28,6 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
-## 💡 Key Relationships
-- **Adversary → Capability → Victim**: Used PowerShell, LOLBins, and persistence mechanisms to compromise `michaelvm` and `centralsrvr`.
-- **Adversary → Infrastructure**: Leveraged cloud services and native tools for C2 and exfiltration.
-- **Capability → Victim**: Enabled initial compromise, lateral movement, and log evasion.
-
-![Diamond Model Diagram Placeholder](path/to/diamond_model_diagram.png)
-
-<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
-
 ## 🥋 MITRE ATT&CK Table
 
 | Flag/Event                           | Tactic             | Technique ID  | Technique Name                                                                 |
@@ -78,8 +69,6 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
    - Alert on `wevtutil cl` activity.
    - Forward logs to a tamper-resistant SIEM.
 
-![Remediation Plan Placeholder](path/to/remediation_plan.png)
-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## ✍️ Lessons Learned
@@ -90,16 +79,12 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 - **Evasion**: PowerShell v2 downgrade disables AMSI and logging.
 - **Log Clearing**: Despite attempts to erase logs, forensic artifacts enabled attack reconstruction.
 
-![Lessons Learned Chart Placeholder](path/to/lessons_learned_chart.png)
-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
-## ✅ Conclusion
+##  Conclusion
 The Lurker intrusion was a sophisticated, multi-phase attack starting with PowerShell abuse and LOLBins, escalating to targeted data exfiltration. The adversary used stealth tactics—registry persistence, scheduled tasks, AMSI evasion, and log clearing—to maintain access and cover tracks. Forensic analysis of process, file, registry, and network events reconstructed the kill chain across `michaelvm` and `centralsrvr`, revealing a focus on financial data (`QuarterlyCryptoHoldings.docx`).
 
----
 <hr style="height: 8px; background-color: grey; border: none; margin-top: 40px;">
----
 
 ## 🕙 Timeline of Events
 
