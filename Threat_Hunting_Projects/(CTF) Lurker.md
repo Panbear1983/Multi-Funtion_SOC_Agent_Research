@@ -1,5 +1,6 @@
 # 🤫 Lurker Re-emerges
-![alt text](<Lurker Main Pic.png>)
+<img width="1024" height="1024" alt="Lurker Main Pic" src="https://github.com/user-attachments/assets/59a1e2ea-4c3b-4d0b-a750-b8bf0a5d7d56" />
+
 ## 📏 Perimeters
 Date Completed: ***2025-07-13***  
 Participant: Peter Pan ***Panbear*** (w/ assistance of [**Martin Barbosa**](https://github.com/mar7inb))  
