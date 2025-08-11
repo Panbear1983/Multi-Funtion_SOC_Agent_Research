@@ -1,4 +1,4 @@
-# 🤫 Lurker Re-emerges
+# 🥷🏿 Lurker Re-emerges
 <img width="1024" height="1024" alt="Lurker Main Pic" src="https://github.com/user-attachments/assets/59a1e2ea-4c3b-4d0b-a750-b8bf0a5d7d56" />
 
 ## 📏 Perimeters
