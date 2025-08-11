@@ -81,10 +81,10 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
-##  Conclusion
+## 🏔️ Conclusion
 The Lurker intrusion was a sophisticated, multi-phase attack starting with PowerShell abuse and LOLBins, escalating to targeted data exfiltration. The adversary used stealth tactics—registry persistence, scheduled tasks, AMSI evasion, and log clearing—to maintain access and cover tracks. Forensic analysis of process, file, registry, and network events reconstructed the kill chain across `michaelvm` and `centralsrvr`, revealing a focus on financial data (`QuarterlyCryptoHoldings.docx`).
 
-<hr style="height: 4px; background-color: grey; border: 40px; margin-top: 80px;">
+<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## 🕙 Timeline of Events
 
