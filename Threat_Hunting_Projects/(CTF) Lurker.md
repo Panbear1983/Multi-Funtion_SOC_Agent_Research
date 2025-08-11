@@ -21,6 +21,15 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
+## 💡 Key Relationships
+- **Adversary → Capability → Victim**: Used PowerShell, LOLBins, and persistence mechanisms to compromise `michaelvm` and `centralsrvr`.
+- **Adversary → Infrastructure**: Leveraged cloud services and native tools for C2 and exfiltration.
+- **Capability → Victim**: Enabled initial compromise, lateral movement, and log evasion.
+
+![Diamond Model Diagram Placeholder](path/to/diamond_model_diagram.png)
+
+<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+
 ## 💠 Diamond Model Analysis
 
 | Feature        | Details                                                                 |
@@ -32,17 +41,24 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
-## 💡 Key Relationships
-- **Adversary → Capability → Victim**: Used PowerShell, LOLBins, and persistence mechanisms to compromise `michaelvm` and `centralsrvr`.
-- **Adversary → Infrastructure**: Leveraged cloud services and native tools for C2 and exfiltration.
-- **Capability → Victim**: Enabled initial compromise, lateral movement, and log evasion.
+## 🥋 MITRE ATT&CK Table
 
-![Diamond Model Diagram Placeholder](path/to/diamond_model_diagram.png)
-
-<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
-
-## ✅ Conclusion
-The Lurker intrusion was a sophisticated, multi-phase attack starting with PowerShell abuse and LOLBins, escalating to targeted data exfiltration. The adversary used stealth tactics—registry persistence, scheduled tasks, AMSI evasion, and log clearing—to maintain access and cover tracks. Forensic analysis of process, file, registry, and network events reconstructed the kill chain across `michaelvm` and `centralsrvr`, revealing a focus on financial data (`QuarterlyCryptoHoldings.docx`).
+| Flag/Event                           | Tactic             | Technique ID  | Technique Name                                                                 |
+|--------------------------------------|--------------------|---------------|--------------------------------------------------------------------------------|
+| Initial PowerShell Execution         | Execution          | T1059.001     | Command and Scripting Interpreter: PowerShell                                  |
+| Recon: Domain Admins Query           | Discovery          | T1087.002     | Account Discovery: Domain Account                                              |
+| Sensitive File Access                | Discovery          | T1083         | File and Directory Discovery                                                   |
+| bitsadmin.exe Download               | Defense Evasion    | T1197         | BITS Jobs                                                                      |
+| Payload Drop: ledger_viewer.exe      | Command and Control| T1105         | Ingress Tool Transfer                                                          |
+| HTA Abuse via mshta.exe              | Defense Evasion    | T1218.005     | System Binary Proxy Execution: Mshta                                           |
+| ADS DLL Drop                         | Defense Evasion    | T1564.004     | Hide Artifacts: NTFS File Attributes                                           |
+| Registry Persistence                 | Persistence        | T1547.001     | Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder          |
+| Scheduled Task Creation              | Persistence        | T1053.005     | Scheduled Task/Job: Scheduled Task                                             |
+| Lateral Movement via schtasks        | Lateral Movement   | T1053.005     | Scheduled Task/Job: Scheduled Task                                             |
+| Remote Document Access               | Collection         | T1039         | Data from Network Shared Drive                                                 |
+| Exfiltration to Pastebin/Cloud       | Exfiltration       | T1567.003     | Exfiltration Over Web Service: Exfiltration to Text Storage Sites              |
+| PowerShell Downgrade                 | Defense Evasion    | T1562.010     | Impair Defenses: Downgrade Attack                                              |
+| Log Clearing                         | Defense Evasion    | T1070.001     | Indicator Removal: Clear Windows Event Logs                                    |
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
@@ -512,4 +528,7 @@ DeviceProcessEvents
 **Finding:** The timestamp confirms the use of `wevtutil` to clear security logs, indicating an attempt to cover tracks.
 <img width="436" height="195" alt="Timestamp" src="https://github.com/user-attachments/assets/3113d74c-f97c-4885-a61b-cd8658cbc9db" />
 
----
+<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+
+## ✅ Conclusion
+The Lurker intrusion was a sophisticated, multi-phase attack starting with PowerShell abuse and LOLBins, escalating to targeted data exfiltration. The adversary used stealth tactics—registry persistence, scheduled tasks, AMSI evasion, and log clearing—to maintain access and cover tracks. Forensic analysis of process, file, registry, and network events reconstructed the kill chain across `michaelvm` and `centralsrvr`, revealing a focus on financial data (`QuarterlyCryptoHoldings.docx`).
