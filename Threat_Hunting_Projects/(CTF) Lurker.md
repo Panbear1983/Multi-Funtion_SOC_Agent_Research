@@ -9,24 +9,11 @@ Infected Host VMs: `michaelvm`, `centralsrvr`
 Suspected Time Frame: ***June 14 – 18, 2025***  
 Frameworks Applied: ***MITRE ATT&CK***, ***NIST 800-61***
 
-## 👩‍🏫 Overview
-
-What appeared to be an isolated breach may have been a decoy. The adversary has returned—more evasive, more strategic. This hunt tracks signs of PowerShell misuse, sensitive file access, and LOLBin-based persistence across two VMs: `michaelvm` and `centralsrvr`. 
-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
-## 🧭 Attack Matrix Overview
+## 📄 Overview
 
-The adversary executed malicious PowerShell via a user-level entry point, bypassing script restrictions to deploy a custom payload on ***michaelvm***. Reconnaissance identified privileged accounts and accessed critical financial documents. ***LOLBins*** (bitsadmin.exe, mshta.exe) downloaded tools, with persistence via registry autorun keys and scheduled tasks. Lateral movement to ***centralsrvr*** used stolen credentials and remote scheduled tasks, targeting sensitive files for exfiltration to Google Drive, Dropbox, and public paste sites. A PowerShell downgrade disabled logging, and event logs were cleared to block forensics.
-
-<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
-
-## 💡 Key Relationships
-- **Adversary → Capability → Victim**: Used PowerShell, LOLBins, and persistence mechanisms to compromise `michaelvm` and `centralsrvr`.
-- **Adversary → Infrastructure**: Leveraged cloud services and native tools for C2 and exfiltration.
-- **Capability → Victim**: Enabled initial compromise, lateral movement, and log evasion.
-
-![Diamond Model Diagram Placeholder](path/to/diamond_model_diagram.png)
+The adversary executed malicious PowerShell via a user-level entry point, bypassing script restrictions to deploy a custom payload on `michaelvm`. Reconnaissance identified privileged accounts and accessed critical financial documents. ***LOLBins*** (bitsadmin.exe, mshta.exe) downloaded tools, with persistence via registry autorun keys and scheduled tasks. Lateral movement to ***centralsrvr*** used stolen credentials and remote scheduled tasks, targeting sensitive files for exfiltration to Google Drive, Dropbox, and public paste sites. A PowerShell downgrade disabled logging, and event logs were cleared to block forensics.
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
@@ -38,6 +25,15 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 | **Infrastructure** | External C2 via `drive.google.com`, `dropbox.com`, `pastebin.com` (`104.22.69.199`). Used LOLBins (`bitsadmin.exe`, `mshta.exe`, `wevtutil.exe`) for delivery and execution. |
 | **Capability** | PowerShell with execution policy bypass and v2 downgrade for AMSI evasion. Employed recon (`net group`), ADS payloads, scheduled tasks, and registry persistence. Exfiltrated data via cloud services. |
 | **Victim**     | Initial target: `michaelvm`. Lateral target: `centralsrvr`. Accessed `QuarterlyCryptoHoldings.docx` on both. Abused sensitive folders and scheduled tasks for persistence. |
+
+<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+
+## 💡 Key Relationships
+- **Adversary → Capability → Victim**: Used PowerShell, LOLBins, and persistence mechanisms to compromise `michaelvm` and `centralsrvr`.
+- **Adversary → Infrastructure**: Leveraged cloud services and native tools for C2 and exfiltration.
+- **Capability → Victim**: Enabled initial compromise, lateral movement, and log evasion.
+
+![Diamond Model Diagram Placeholder](path/to/diamond_model_diagram.png)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
@@ -59,18 +55,6 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 | Exfiltration to Pastebin/Cloud       | Exfiltration       | T1567.003     | Exfiltration Over Web Service: Exfiltration to Text Storage Sites              |
 | PowerShell Downgrade                 | Defense Evasion    | T1562.010     | Impair Defenses: Downgrade Attack                                              |
 | Log Clearing                         | Defense Evasion    | T1070.001     | Indicator Removal: Clear Windows Event Logs                                    |
-
-<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
-
-## ✍️ Lessons Learned
-- **Initial Access**: PowerShell with bypass flags in user folders signals compromise, even if it mimics legitimate use.
-- **LOLBin Abuse**: Native tools (`bitsadmin.exe`, `mshta.exe`, `wevtutil.exe`) evade EDR detection.
-- **Persistence**: Layered use of registry keys and scheduled tasks ensures reboot survival.
-- **Exfiltration**: Cloud services (Dropbox, Google Drive, Pastebin) bypass traditional network filters.
-- **Evasion**: PowerShell v2 downgrade disables AMSI and logging.
-- **Log Clearing**: Despite attempts to erase logs, forensic artifacts enabled attack reconstruction.
-
-![Lessons Learned Chart Placeholder](path/to/lessons_learned_chart.png)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
@@ -97,6 +81,25 @@ The adversary executed malicious PowerShell via a user-level entry point, bypass
 ![Remediation Plan Placeholder](path/to/remediation_plan.png)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+
+## ✍️ Lessons Learned
+- **Initial Access**: PowerShell with bypass flags in user folders signals compromise, even if it mimics legitimate use.
+- **LOLBin Abuse**: Native tools (`bitsadmin.exe`, `mshta.exe`, `wevtutil.exe`) evade EDR detection.
+- **Persistence**: Layered use of registry keys and scheduled tasks ensures reboot survival.
+- **Exfiltration**: Cloud services (Dropbox, Google Drive, Pastebin) bypass traditional network filters.
+- **Evasion**: PowerShell v2 downgrade disables AMSI and logging.
+- **Log Clearing**: Despite attempts to erase logs, forensic artifacts enabled attack reconstruction.
+
+![Lessons Learned Chart Placeholder](path/to/lessons_learned_chart.png)
+
+<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+
+## ✅ Conclusion
+The Lurker intrusion was a sophisticated, multi-phase attack starting with PowerShell abuse and LOLBins, escalating to targeted data exfiltration. The adversary used stealth tactics—registry persistence, scheduled tasks, AMSI evasion, and log clearing—to maintain access and cover tracks. Forensic analysis of process, file, registry, and network events reconstructed the kill chain across `michaelvm` and `centralsrvr`, revealing a focus on financial data (`QuarterlyCryptoHoldings.docx`).
+
+---
+<hr style="height: 8px; background-color: grey; border: none; margin-top: 40px;">
+---
 
 ## 🕙 Timeline of Events
 
@@ -528,7 +531,4 @@ DeviceProcessEvents
 **Finding:** The timestamp confirms the use of `wevtutil` to clear security logs, indicating an attempt to cover tracks.
 <img width="436" height="195" alt="Timestamp" src="https://github.com/user-attachments/assets/3113d74c-f97c-4885-a61b-cd8658cbc9db" />
 
-<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
-## ✅ Conclusion
-The Lurker intrusion was a sophisticated, multi-phase attack starting with PowerShell abuse and LOLBins, escalating to targeted data exfiltration. The adversary used stealth tactics—registry persistence, scheduled tasks, AMSI evasion, and log clearing—to maintain access and cover tracks. Forensic analysis of process, file, registry, and network events reconstructed the kill chain across `michaelvm` and `centralsrvr`, revealing a focus on financial data (`QuarterlyCryptoHoldings.docx`).
