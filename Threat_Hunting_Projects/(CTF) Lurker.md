@@ -519,4 +519,8 @@ DeviceProcessEvents
 **Finding:** The timestamp confirms the use of `wevtutil` to clear security logs, indicating an attempt to cover tracks.
 <img width="436" height="195" alt="Timestamp" src="https://github.com/user-attachments/assets/3113d74c-f97c-4885-a61b-cd8658cbc9db" />
 
+---
+
+# FINISHED!! YAY~
+<img width="406" height="381" alt="V2hhdCBZb3U=" src="https://github.com/user-attachments/assets/8308edc2-5091-4636-87f9-8d238c3bcf93" />
 
