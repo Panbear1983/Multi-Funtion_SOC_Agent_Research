@@ -1,14 +1,16 @@
 # 🛡️ Threat Hunt Scenario #3 — *Hide Your RDP: Password Spray Leads to Full Compromise*
 <img width="1536" height="1024" alt="adninistrator -P pass tat rop20A1123" src="https://github.com/user-attachments/assets/759ad1f8-eb9e-45aa-b0fd-e4d8434d7675" />
 
-**Wingmen:** Gregory Sewalt, Mohammed A
-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## 📏 Perimeters
-- **Incident Date:** **2025-09-14**
-- **In-Scope Hosts:** Windows cloud VM(s) where `DeviceName` contains **"flare"**
-- **Tooling Used:** Microsoft Sentinel • Microsoft Defender for Endpoint (MDE) • Advanced Hunting (KQL)
+Date Completed: ***2025-09-08***  
+Wingmen List: [**Gregory Sewalt**](https://github.com/gsewalt/), [**Mohammed A**](https://github.com/SancLogic)  
+Simulated Environment: `LOG(N) Pacific - Cyber Range 1`  
+Infacted Host VM DeviceName contains `flare`  
+Incident Date: ***2025-09-14***  
+Frameworks Applied: ***MITRE ATT&CK***, ***NIST 800-61***  
+
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
