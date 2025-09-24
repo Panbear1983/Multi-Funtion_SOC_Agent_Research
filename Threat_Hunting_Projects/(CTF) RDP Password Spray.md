@@ -80,6 +80,41 @@ The investigation reconstructs a complete intrusion chain: password spray → va
 
 # 🎯 Capture The Flags
 
+## 🕙 Timeline of Events
+
+| **Timestamp (UTC)**          | **Event**                                   | **Target Device**      | **Details**                              |
+|------------------------------|---------------------------------------------|------------------------|-------------------------------------------|
+| **2025-09-17 ~**             | Earliest RDP password spray attempt         | flare host             | External IP 159.26.106.84 (Flag 1)        |
+| **2025-09-17 ~**             | First successful RDP login                  | flare host             | Compromised account: slflare (Flag 2)     |
+| **2025-09-17 ~**             | Suspicious binary executed post-login       | flare host             | msupdate.exe (Flag 3)                     |
+| **2025-09-17 ~**             | Payload executed with bypass policy         | flare host             | "msupdate.exe" -ExecutionPolicy Bypass -File C:\Users\Public\update_check.ps1 (Flag 4) |
+| **2025-09-17 ~**             | Scheduled Task persistence created          | flare host             | Task: MicrosoftUpdateSync (Flag 5)        |
+| **2025-09-17 ~**             | Defender exclusion added                    | flare host             | C:\Windows\Temp (Flag 6)                  |
+| **2025-09-17 ~**             | Discovery command run                       | flare host             | "cmd.exe" /c systeminfo (Flag 7)          |
+| **2025-09-17 ~**             | Archive file created for staging            | flare host             | backup_sync.zip (Flag 8)                  |
+| **2025-09-17 ~**             | C2 connection made                          | flare host             | 185.92.220.87 (Flag 9)                    |
+| **2025-09-17 ~**             | Exfiltration attempt to IP:Port             | flare host             | 185.92.220.87:8081 (Flag 10)              |
+
+
+<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+
+## 🚩 Completed Flag Map
+
+| Flag   | Objective                                   | Value                                           |
+|--------|---------------------------------------------|--------------------------------------------------|
+| **1**  | Attacker IP Address                         | 159.26.106.84                                    |
+| **2**  | Compromised Account                         | slflare                                          |
+| **3**  | Executed Binary Name                        | msupdate.exe                                     |
+| **4**  | Command Line Used to Execute the Binary     | "msupdate.exe" -ExecutionPolicy Bypass -File C:\Users\Public\update_check.ps1 |
+| **5**  | Persistence Mechanism (Scheduled Task)      | MicrosoftUpdateSync                               |
+| **6**  | Defender Setting Modified (Exclusion Path)  | C:\Windows\Temp                                   |
+| **7**  | Discovery Command Run                       | "cmd.exe" /c systeminfo                           |
+| **8**  | Archive File Created                        | backup_sync.zip                                   |
+| **9**  | C2 Connection Destination                   | 185.92.220.87                                     |
+| **10** | Exfiltration Attempt Destination (IP:Port)  | 185.92.220.87:8081                                |
+
+
+
 ### 🏁 Stage 1: Initial Access — *The Threat Actor is trying to get into your network.*
 
 ### Flag 1: Attacker IP Address
@@ -174,7 +209,7 @@ DeviceProcessEvents
 | project ProcessCommandLine
 ```
 **Output:** `"msupdate.exe" -ExecutionPolicy Bypass -File C:\Users\Public\update_check.ps1`  
-**Finding:** The binary was invoked with **ExecutionPolicy Bypass**, executing `C:\Users\Public\update_check.ps1`, indicating script‑based follow‑on activity.
+**Finding:** The binary was invoked with **ExecutionPolicy Bypass**, executing `C:\Users\Public\update_check.ps1`, indicating script‑based follow‑on activity.  
 <img width="608" height="90" alt="› msupdate exe -ExecutionPolicy Bypass -File C UsersPublicupdate_check ps1" src="https://github.com/user-attachments/assets/c97fced0-d8f1-4388-a3d1-5edf31edce13" />
 
 ---
