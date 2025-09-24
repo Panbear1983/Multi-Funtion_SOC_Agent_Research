@@ -1,4 +1,5 @@
 # 🛡️ Threat Hunt Scenario #3 — *Hide Your RDP: Password Spray Leads to Full Compromise*
+<img width="1536" height="1024" alt="adninistrator -P pass tat rop20A1123" src="https://github.com/user-attachments/assets/759ad1f8-eb9e-45aa-b0fd-e4d8434d7675" />
 
 **Wingmen:** Gregory Sewalt, Mohammed A
 
@@ -102,6 +103,7 @@ DeviceLogonEvents
 ```
 **Output:** `159.26.106.84`  
 **Finding:** The earliest `LogonSuccess` from a public source was **159.26.106.84**, consistent with password‑spray attempts preceding a successful login.
+<img width="1237" height="405" alt="Pasted Graphic 5" src="https://github.com/user-attachments/assets/65d71a9d-27d3-414d-9104-c0027b54ce82" />
 
 ---
 
@@ -126,6 +128,7 @@ DeviceLogonEvents
 ```
 **Output:** `slflare`  
 **Finding:** The first successful RDP authentication from an external IP used the account **slflare**.
+<img width="1178" height="284" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/37e01d26-6c6b-48ce-8228-21df181ce367" />
 
 ---
 
@@ -149,6 +152,7 @@ DeviceProcessEvents
 ```
 **Output:** `msupdate.exe`  
 **Finding:** Under **slflare**, the process list shows execution of **msupdate.exe**, a legit‑sounding name commonly used to masquerade malicious payloads.
+<img width="1208" height="361" alt="Pasted Graphic 7" src="https://github.com/user-attachments/assets/9615dadd-eeca-4627-93ec-701983234144" />
 
 ---
 
@@ -171,6 +175,7 @@ DeviceProcessEvents
 ```
 **Output:** `"msupdate.exe" -ExecutionPolicy Bypass -File C:\Users\Public\update_check.ps1`  
 **Finding:** The binary was invoked with **ExecutionPolicy Bypass**, executing `C:\Users\Public\update_check.ps1`, indicating script‑based follow‑on activity.
+<img width="608" height="90" alt="› msupdate exe -ExecutionPolicy Bypass -File C UsersPublicupdate_check ps1" src="https://github.com/user-attachments/assets/c97fced0-d8f1-4388-a3d1-5edf31edce13" />
 
 ---
 
@@ -194,6 +199,7 @@ DeviceRegistryEvents
 ```
 **Output:** `MicrosoftUpdateSync`  
 **Finding:** New entry under **TaskCache\Tree** reveals a scheduled task named **MicrosoftUpdateSync**, consistent with persistence created minutes after initial access.
+<img width="1272" height="317" alt="•  Sep 17,2605 24644 AM" src="https://github.com/user-attachments/assets/61f240a3-0988-4045-87ab-54befe1a6a42" />
 
 ---
 
@@ -217,6 +223,7 @@ DeviceRegistryEvents
 ```
 **Output:** `C:\Windows\Temp`  
 **Finding:** A Defender exclusion was added for **C:\Windows\Temp**, a common staging folder for transient payloads and archives.
+<img width="1103" height="349" alt="Sep 1R 2075 8 16" src="https://github.com/user-attachments/assets/0f804391-7ce2-4a01-a351-b2843db7aeb5" />
 
 ---
 
@@ -240,6 +247,7 @@ DeviceProcessEvents
 ```
 **Output:** `"cmd.exe" /c systeminfo`  
 **Finding:** The attacker initiated host enumeration via **systeminfo** (via `cmd /c`), shortly after establishing persistence.
+<img width="658" height="213" alt="Timestamp" src="https://github.com/user-attachments/assets/269da14d-fea0-4599-9be9-7d4885aab5e2" />
 
 ---
 
@@ -263,6 +271,7 @@ DeviceProcessEvents
 ```
 **Output:** `backup_sync.zip`  
 **Finding:** The actor staged collected data into **backup_sync.zip**, a benign‑sounding archive name typical of masquerading techniques.
+<img width="1263" height="197" alt="Pasted Graphic 15" src="https://github.com/user-attachments/assets/fd488f21-6b97-43f6-a646-a46d12c6f36b" />
 
 ---
 
@@ -286,6 +295,7 @@ DeviceProcessEvents
 ```
 **Output:** `185.92.220.87`  
 **Finding:** Process telemetry shows repeated callbacks to **185.92.220.87**, indicating external C2/tooling retrieval.
+<img width="1183" height="197" alt="Pasted Graphic 16" src="https://github.com/user-attachments/assets/1cc54796-7b8f-4fb8-8231-9bee5b0c9f8c" />
 
 ---
 
@@ -309,6 +319,7 @@ DeviceProcessEvents
 ```
 **Output:** `185.92.220.87:8081`  
 **Finding:** The staged archive was sent (or attempted) to **185.92.220.87:8081**, aligning with observed C2 infrastructure and unencrypted exfil paths.
+<img width="1156" height="192" alt="Pasted Graphic 17" src="https://github.com/user-attachments/assets/626f6b0f-6ad6-4e47-be16-4fb3bf664fbd" />
 
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
