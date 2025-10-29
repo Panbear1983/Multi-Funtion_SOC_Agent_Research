@@ -1,0 +1,257 @@
+{
+  "scan_metadata": {
+    "scan_id": "scan_20251029_152652",
+    "start_time": "2025-10-29T15:32:31.605522+00:00",
+    "end_time": "2025-10-29T15:38:54.682575+00:00",
+    "tables_scanned": 2,
+    "records_analyzed": 109980,
+    "anomalies_found": 5,
+    "statistical_outliers": 1,
+    "baseline_deviations": 0,
+    "correlated_attacks": 0
+  },
+  "executive_summary": "\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n        ANOMALY DETECTION SCAN REPORT - EXECUTIVE SUMMARY\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\nScan ID: scan_20251029_152652\nDate: 2025-10-29 15:38:54 UTC\nDuration: 383s\nRecords Analyzed: 109,980\nTables Scanned: 2\n\nFINDINGS SUMMARY\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nTotal Anomalies: 5\n  \u2022 High Confidence: 0\n  \u2022 Medium Confidence: 5\n  \u2022 Low Confidence: 0\n\nStatistical Outliers Detected: 1\nBaseline Deviations: 0\nCorrelated Attack Chains: 0\n\nAffected Systems: 0\nAffected Users: 0\n\nANALYSIS METHOD\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nModel Used: local-mix\nBaseline Scans: 4\nAnalysis Stages: Statistical \u2192 Baseline \u2192 LLM \u2192 Correlation\n\n\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n",
+  "findings": [
+    {
+      "title": "Potential Ip Address Indicators Detected",
+      "description": "Found 3 ip address indicators in AzureNetworkAnalytics_CL logs on devices: cyber-range-admin-soc/linux-target-1, cyber-range-admin-soc/windows-target-1, student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva. These should be investigated for potential malicious activity.",
+      "mitre": {
+        "tactic": "Reconnaissance",
+        "technique": "T1590",
+        "sub_technique": "T1590.001",
+        "id": "T1590.001",
+        "description": "Gather Victim Host Information"
+      },
+      "log_lines": [
+        "Found ip_address: 10.0.0.198, 10.0.0.135, 10.0.0.5",
+        "DeviceName: cyber-range-admin-soc/linux-target-1",
+        "DeviceName: cyber-range-admin-soc/windows-target-1",
+        "DeviceName: student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "confidence": "Medium",
+      "recommendations": [
+        "monitor",
+        "investigate"
+      ],
+      "indicators_of_compromise": [
+        "Ip Address: 10.0.0.198",
+        "Ip Address: 10.0.0.135",
+        "Ip Address: 10.0.0.5"
+      ],
+      "tags": [
+        "ioc-detection",
+        "ip_address",
+        "anomaly-scan",
+        "AzureNetworkAnalytics_CL",
+        "statistical-outlier"
+      ],
+      "notes": "Automatically detected 3 ip address indicators using pattern matching.",
+      "device_names": [
+        "cyber-range-admin-soc/windows-target-1",
+        "cyber-range-admin-soc/linux-target-1",
+        "student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "_table_name": "AzureNetworkAnalytics_CL",
+      "_scan_id": "scan_20251029_152652"
+    },
+    {
+      "title": "Potential Hash Indicators Detected",
+      "description": "Found 1 hash indicators in AzureNetworkAnalytics_CL logs on devices: cyber-range-admin-soc/linux-target-1, cyber-range-admin-soc/windows-target-1, student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva. These should be investigated for potential malicious activity.",
+      "mitre": {
+        "tactic": "Reconnaissance",
+        "technique": "T1590",
+        "sub_technique": "T1590.001",
+        "id": "T1590.001",
+        "description": "Gather Victim Host Information"
+      },
+      "log_lines": [
+        "Found hash: 34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3",
+        "DeviceName: cyber-range-admin-soc/linux-target-1",
+        "DeviceName: cyber-range-admin-soc/windows-target-1",
+        "DeviceName: student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "confidence": "Medium",
+      "recommendations": [
+        "monitor",
+        "investigate"
+      ],
+      "indicators_of_compromise": [
+        "Hash: 34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3"
+      ],
+      "tags": [
+        "ioc-detection",
+        "hash",
+        "anomaly-scan",
+        "AzureNetworkAnalytics_CL",
+        "statistical-outlier"
+      ],
+      "notes": "Automatically detected 1 hash indicators using pattern matching.",
+      "device_names": [
+        "cyber-range-admin-soc/windows-target-1",
+        "cyber-range-admin-soc/linux-target-1",
+        "student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "_table_name": "AzureNetworkAnalytics_CL",
+      "_scan_id": "scan_20251029_152652"
+    },
+    {
+      "title": "Potential Domain Indicators Detected",
+      "description": "Found 33 domain indicators in AzureNetworkAnalytics_CL logs on devices: cyber-range-admin-soc/linux-target-1, cyber-range-admin-soc/windows-target-1, student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva. These should be investigated for potential malicious activity.",
+      "mitre": {
+        "tactic": "Reconnaissance",
+        "technique": "T1590",
+        "sub_technique": "T1590.001",
+        "id": "T1590.001",
+        "description": "Gather Victim Host Information"
+      },
+      "log_lines": [
+        "Found domain: .184968, 9, 2",
+        "DeviceName: cyber-range-admin-soc/linux-target-1",
+        "DeviceName: cyber-range-admin-soc/windows-target-1",
+        "DeviceName: student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "confidence": "Medium",
+      "recommendations": [
+        "monitor",
+        "investigate"
+      ],
+      "indicators_of_compromise": [
+        "Domain: .184968",
+        "Domain: 9",
+        "Domain: 2",
+        "Domain: .198",
+        "Domain: 69470",
+        "Domain: .070504",
+        "Domain: .669470",
+        "Domain: 10580",
+        "Domain: 48465",
+        "Domain: 69138",
+        "Domain: 85096",
+        "Domain: 35",
+        "Domain: .135",
+        "Domain: .710580",
+        "Domain: .5",
+        "Domain: 4",
+        "Domain: .500886",
+        "Domain: 84968",
+        "Domain: 70504",
+        "Domain: 00886",
+        "Domain: 29114",
+        "Domain: 19973",
+        "Domain: 0",
+        "Domain: .268399",
+        "Domain: 68399",
+        "Domain: 1",
+        "Domain: .919973",
+        "Domain: .569138",
+        "Domain: .685096",
+        "Domain: .548465",
+        "Domain: 98",
+        "Domain: 7",
+        "Domain: .229114"
+      ],
+      "tags": [
+        "ioc-detection",
+        "domain",
+        "anomaly-scan",
+        "AzureNetworkAnalytics_CL",
+        "statistical-outlier"
+      ],
+      "notes": "Automatically detected 33 domain indicators using pattern matching.",
+      "device_names": [
+        "cyber-range-admin-soc/windows-target-1",
+        "cyber-range-admin-soc/linux-target-1",
+        "student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "_table_name": "AzureNetworkAnalytics_CL",
+      "_scan_id": "scan_20251029_152652"
+    },
+    {
+      "title": "Potential Device Name Indicators Detected",
+      "description": "Found 2 device name indicators in AzureNetworkAnalytics_CL logs on devices: cyber-range-admin-soc/linux-target-1, cyber-range-admin-soc/windows-target-1, student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva. These should be investigated for potential malicious activity.",
+      "mitre": {
+        "tactic": "Reconnaissance",
+        "technique": "T1590",
+        "sub_technique": "T1590.001",
+        "id": "T1590.001",
+        "description": "Gather Victim Host Information"
+      },
+      "log_lines": [
+        "Found device_name: AllowedOutFlows_d, 0",
+        "DeviceName: cyber-range-admin-soc/linux-target-1",
+        "DeviceName: cyber-range-admin-soc/windows-target-1",
+        "DeviceName: student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "confidence": "Medium",
+      "recommendations": [
+        "monitor",
+        "investigate"
+      ],
+      "indicators_of_compromise": [
+        "DeviceName: AllowedOutFlows_d",
+        "DeviceName: 0"
+      ],
+      "tags": [
+        "ioc-detection",
+        "device_name",
+        "anomaly-scan",
+        "AzureNetworkAnalytics_CL",
+        "statistical-outlier"
+      ],
+      "notes": "Automatically detected 2 device name indicators using pattern matching.",
+      "device_names": [
+        "cyber-range-admin-soc/windows-target-1",
+        "cyber-range-admin-soc/linux-target-1",
+        "student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "_table_name": "AzureNetworkAnalytics_CL",
+      "_scan_id": "scan_20251029_152652"
+    },
+    {
+      "title": "Potential Account Name Indicators Detected",
+      "description": "Found 2 account name indicators in AzureNetworkAnalytics_CL logs on devices: cyber-range-admin-soc/linux-target-1, cyber-range-admin-soc/windows-target-1, student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva. These should be investigated for potential malicious activity.",
+      "mitre": {
+        "tactic": "Reconnaissance",
+        "technique": "T1590",
+        "sub_technique": "T1590.001",
+        "id": "T1590.001",
+        "description": "Gather Victim Host Information"
+      },
+      "log_lines": [
+        "Found account_name: DeniedInFlows_d, 0",
+        "DeviceName: cyber-range-admin-soc/linux-target-1",
+        "DeviceName: cyber-range-admin-soc/windows-target-1",
+        "DeviceName: student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "confidence": "Medium",
+      "recommendations": [
+        "monitor",
+        "investigate"
+      ],
+      "indicators_of_compromise": [
+        "AccountName: DeniedInFlows_d",
+        "AccountName: 0"
+      ],
+      "tags": [
+        "ioc-detection",
+        "account_name",
+        "anomaly-scan",
+        "AzureNetworkAnalytics_CL",
+        "statistical-outlier"
+      ],
+      "notes": "Automatically detected 2 account name indicators using pattern matching.",
+      "device_names": [
+        "cyber-range-admin-soc/windows-target-1",
+        "cyber-range-admin-soc/linux-target-1",
+        "student-rg-34430195fb8047e5b4f3efacebad03f0b57faba0b6d31f0e3ff1d2e0a53700a3/win10jsilva"
+      ],
+      "_table_name": "AzureNetworkAnalytics_CL",
+      "_scan_id": "scan_20251029_152652"
+    }
+  ],
+  "correlated_attacks": [],
+  "baseline_info": {
+    "scan_count": 4,
+    "last_updated": "2025-10-29T15:38:54.675894+00:00"
+  }
+}

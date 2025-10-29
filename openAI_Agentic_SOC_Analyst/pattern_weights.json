@@ -15,8 +15,8 @@
   "device_name": 0.48,
   "account_name": 0.48,
   "domain": 1.1,
-  "anomaly-scan": 1.21,
-  "DeviceProcessEvents": 1.21,
-  "DeviceNetworkEvents": 1.21,
-  "SigninLogs": 1.21
+  "anomaly-scan": 1.33,
+  "DeviceProcessEvents": 1.33,
+  "DeviceNetworkEvents": 1.33,
+  "SigninLogs": 1.33
 }
