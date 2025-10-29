@@ -26,6 +26,11 @@ An AI-powered Security Operations Center (SOC) analyst that uses Large Language 
 - [Performance Metrics](#-performance-metrics)
 - [Troubleshooting](#-troubleshooting)
 - [Best Practices](#-best-practices)
+- [CTF Mode - Interactive Flag Hunting](#-ctf-mode---interactive-flag-hunting)
+- [Enhanced Model Management](#-enhanced-model-management)
+- [Setup & Configuration Guides](#-setup--configuration-guides)
+- [Advanced Features](#-advanced-features)
+- [Reference Materials](#-reference-materials)
 
 ---
 
@@ -36,7 +41,7 @@ An AI-powered Security Operations Center (SOC) analyst that uses Large Language 
 python _main.py
 
 # 2. Select investigation mode
-[1] Threat Hunting  [2] Anomaly Detection
+[1] Threat Hunting  [2] Anomaly Detection  [3] CTF Mode
 
 # 3. Select model
 [5] gpt-oss:20b (best for Threat Hunting)
@@ -377,6 +382,43 @@ Comments: Good detection
 - Statistical anomalies
 - Behavioral deviations
 - Cross-table correlation
+
+---
+
+### Mode 3: CTF Mode (Interactive Flag Hunting)
+
+**Use Cases:**
+- 🏆 CTF competitions
+- 🎯 Multi-stage attack investigations
+- 📋 Progressive flag discovery
+- 🔗 Attack chain reconstruction
+
+**Workflow:**
+1. Select CTF Mode from main menu
+2. Choose data source (MDE or Azure Log Analytics)
+3. Start new investigation or resume existing session
+4. Follow 6-stage interactive hunt flow:
+   - Stage 1: Intel Briefing (flag objective)
+   - Stage 2: Query Building (LLM-assisted KQL)
+   - Stage 3: Execution (query runs)
+   - Stage 4: Analysis (LLM interprets results)
+   - Stage 5: Flag Capture (save answer)
+   - Stage 6: Continue to next flag
+5. System automatically correlates flags and suggests filters
+6. Generate final report with all findings
+
+**Key Features:**
+- Session memory accumulates flags and IOCs
+- Auto-correlation suggests filters from previous flags
+- Resume capability - pause and continue anytime
+- Multiple sessions supported
+- Comprehensive reporting
+
+**Example Workflow:**
+- Flag 1: Find attacker IP → 159.26.106.84
+- Flag 2: System auto-suggests filter using IP from Flag 1
+- Flag 3: System uses account from Flag 2
+- Each flag builds on previous discoveries automatically
 
 ---
 
@@ -1518,6 +1560,651 @@ mv temp.jsonl _analysis_feedback.jsonl
 - BALANCED mode as default
 - Auto-escalate to STRICT on high-confidence alerts
 - Schedule RELAXED mode for reports
+
+---
+
+## 🏆 CTF Mode - Interactive Flag Hunting
+
+### Overview
+
+CTF Mode is an interactive flag hunting pipeline designed for CTF competitions and multi-stage attack investigations. It features session memory, automatic correlation, LLM-assisted query generation, and comprehensive reporting.
+
+### Key Features
+
+- **Session Memory**: Accumulates flags and IOCs across multiple hunts
+- **Auto-Correlation**: Suggests filters based on previous flags
+- **LLM-Assisted Queries**: Generates KQL queries from objectives
+- **Progressive Capture**: Tracks progress through attack chain
+- **Final Report**: Auto-generates investigation report in markdown
+- **Resume Capability**: Pause and resume hunts anytime
+- **Multiple Sessions**: Work on multiple CTFs in parallel
+
+### Quick Start
+
+```bash
+# 1. Run the agent
+python3 _main.py
+
+# 2. Select CTF Mode
+Select mode [1-4]: 3
+
+# 3. Configure settings
+Model: gpt-oss:20b (recommended for accuracy)
+Severity: 1 (Critical - for maximum detection)
+
+# 4. Start or resume hunt
+[New] Create new investigation
+[Continue] Resume existing hunt
+```
+
+### The 6-Stage Hunt Flow
+
+#### **Stage 0: Session Context** (shows accumulated knowledge)
+```
+Session Memory Loaded:
+  ✓ Flag 1: Attacker IP = 159.26.106.84
+  ✓ Flag 2: Compromised Account = slflare
+  
+Progress: 2/10 Flags (20%)
+```
+
+#### **Stage 1: Intel Briefing** (flag objective)
+```
+🚩 FLAG 3: EXECUTED BINARY
+
+Objective:
+Identify the binary executed by the attacker
+
+Guidance:
+Look for binaries from unusual paths (Public, Temp, Downloads)
+Focus on compromised account from Flag 2
+```
+
+#### **Stage 2: Query Building** (LLM suggests KQL)
+```
+SUGGESTED QUERY:
+DeviceProcessEvents
+| where AccountName == "slflare"  // From Flag 2
+| where ProcessCommandLine contains "Public"
+| project FileName, ProcessCommandLine
+
+OPTIONS:
+  [1] Execute this query
+  [2] Write custom KQL
+  [3] Cancel
+```
+
+#### **Stage 3: Execution** (query runs)
+```
+✓ Query completed
+Records returned: 47
+
+RESULTS (first 10 rows):
+Timestamp            | FileName        | ProcessCommandLine
+---------------------|-----------------|--------------------------------
+2025-09-14 18:41:28  | msupdate.exe    | "msupdate.exe" -ExecutionPo...
+```
+
+#### **Stage 4: Analysis** (LLM interprets)
+```
+FINDING:
+The binary executed is: msupdate.exe
+
+EVIDENCE:
+- Executed at 18:41:28 (earliest suspicious binary)
+- By account "slflare" (Flag 2)
+- From C:\Users\Public\ (staging directory)
+
+REASONING:
+Name mimics Microsoft Update utility. First malicious binary after RDP login.
+```
+
+#### **Stage 5: Capture** (save answer)
+```
+SUGGESTED ANSWER: msupdate.exe
+
+Accept this answer? [Y/n]: y
+
+Add notes (optional): Malicious binary from Public folder
+
+✓ FLAG 3 CAPTURED: msupdate.exe
+Progress: 3/10 Flags (30%)
+```
+
+#### **Stage 6: Continue** (next action)
+```
+NEXT STEPS:
+  [1] Continue to Flag 4
+  [2] Re-investigate Flag 3
+  [3] View progress summary
+  [4] Generate report and exit
+```
+
+### Recovery Options
+
+If you reject an answer at Stage 5, you get recovery options:
+
+```
+⚠️  ANSWER REJECTED - RECOVERY OPTIONS
+
+  [1] 🔨 Build new query (start from Stage 2)
+  [2] 🧠 Re-analyze same results (new LLM analysis)
+  [3] ✍️  Enter answer manually
+  [4] 👁️  View raw results
+  [5] ⏭️  Skip this flag
+  [6] 🚪 Exit hunt
+```
+
+### Session Management
+
+**Resume Capability:**
+- Sessions are auto-saved after each flag capture
+- Resume anytime by selecting CTF mode and choosing "Continue"
+- Multiple sessions supported - switch between investigations
+
+**File Structure:**
+```
+ctf_sessions/
+├── {Project_Name}_{timestamp}.jsonl    # Event audit log
+├── {Project_Name}_summary.json          # Current state
+└── {Project_Name}_report.md             # Final report
+```
+
+### Data Source Selection
+
+CTF Mode supports both Microsoft Defender for Endpoint (MDE) and Azure Log Analytics:
+
+```
+SELECT DATA SOURCE
+
+[1] Microsoft Defender for Endpoint (MDE) ← Recommended
+    • All tables available (DeviceRegistryEvents included!)
+    • Real-time data (no ingestion delay)
+    • Free (included in MDE license)
+    • Best for CTF hunting
+
+[2] Azure Sentinel / Log Analytics
+    • Configured tables only
+    • Multi-source correlation
+    • Long-term storage
+```
+
+### Tips for Best Results
+
+1. **Use GPT-OSS:20B or GPT-4o** - Better at KQL generation and analysis
+2. **Set Severity to Critical (1)** - Maximum detection sensitivity
+3. **Review LLM Queries** - Check suggested KQL before executing
+4. **Add Notes** - Brief explanations help final report
+5. **Use Correlation Hints** - System auto-suggests filters from previous flags
+
+### Example Workflow
+
+```bash
+# Flag 1: Find attacker IP
+→ Query: DeviceLogonEvents | where RemoteIPType == 'Public'
+→ Result: 159.26.106.84
+→ Captured ✓
+
+# Flag 2: Find compromised account
+→ LLM suggests: where RemoteIP == '159.26.106.84'  ← Auto-correlation!
+→ Query: DeviceLogonEvents | where RemoteIP == '159.26.106.84'
+→ Result: slflare
+→ Captured ✓
+
+# Flag 3: Find executed binary
+→ LLM suggests: where AccountName == 'slflare'  ← Uses Flag 2!
+→ Query: DeviceProcessEvents | where AccountName == 'slflare'
+→ Result: msupdate.exe
+→ Captured ✓
+```
+
+Each flag builds on previous discoveries automatically!
+
+---
+
+## 🤖 Enhanced Model Management
+
+### Adding New Models
+
+The system now **automatically detects** whether a model is local or cloud, and routes accordingly. **No code changes needed!** Just add the model to `GUARDRAILS.py`.
+
+### How Model Routing Works
+
+**Automatic Detection:**
+```python
+def is_local_model(model_name):
+    """
+    Determines if a model is local/Ollama or cloud/OpenAI
+    Based on cost in GUARDRAILS.ALLOWED_MODELS
+    """
+    model_info = GUARDRAILS.ALLOWED_MODELS[model_name]
+    # Local models have zero cost
+    return (model_info["cost_per_million_input"] == 0.00 and 
+            model_info["cost_per_million_output"] == 0.00)
+```
+
+**Routing Logic:**
+- If `cost == 0.00` → Routes to Ollama (local)
+- If `cost > 0.00` → Routes to OpenAI API (cloud)
+
+### Adding a Cloud Model
+
+**Step 1: Add to GUARDRAILS.py**
+```python
+ALLOWED_MODELS = {
+    # ... existing models ...
+    
+    "gpt-6-ultra": {
+        "max_input_tokens": 500_000,
+        "max_output_tokens": 64_000,
+        "cost_per_million_input": 5.00,    # ← Set actual cost
+        "cost_per_million_output": 15.00,  # ← Set actual cost
+        "tier": {
+            "free": None,
+            "1": 50_000,
+            "2": 500_000,
+            "3": 1_000_000,
+            "4": 3_000_000,
+            "5": 50_000_000
+        }
+    }
+}
+```
+
+**Done!** System automatically detects as cloud model.
+
+### Adding a Local Model
+
+**Step 1: Add to GUARDRAILS.py**
+```python
+ALLOWED_MODELS = {
+    # ... existing models ...
+    
+    "llama3:70b": {
+        "max_input_tokens": 128_000,
+        "max_output_tokens": 32_768,
+        "cost_per_million_input": 0.00,   # ← Zero cost = local model
+        "cost_per_million_output": 0.00,  # ← Zero cost = local model
+        "tier": {
+            "free": None,
+            "1": None,
+            "2": None,
+            "3": None,
+            "4": None,
+            "5": None
+        }
+    }
+}
+```
+
+**Step 2: (Optional) Add Ollama Mapping**
+If your model name differs from Ollama's actual name, add to mapping in `CTF_HUNT_MODE.py`:
+```python
+def get_ollama_model_name(model_name):
+    """Map friendly names to Ollama model names"""
+    ollama_mapping = {
+        "qwen": "qwen3:8b",
+        "gpt-oss:20b": "gpt-oss:20b",
+        "llama3": "llama3:70b",           # ← Add your mapping
+    }
+    return ollama_mapping.get(model_name, model_name)
+```
+
+**Step 3: Pull Model in Ollama**
+```bash
+ollama pull llama3:70b
+ollama list  # Verify it's available
+```
+
+**Done!** Model is available in all modes.
+
+### Local Mix Models (Intelligent Routing)
+
+The **Local Mix** feature automatically selects the optimal local model (GPT-OSS or Qwen) for each task.
+
+**How It Works:**
+- **GPT-OSS 20B** → Used for reasoning-heavy tables (DeviceProcessEvents, DeviceRegistryEvents)
+- **Qwen 8B** → Used for high-volume tables (DeviceNetworkEvents, SigninLogs)
+- **Token-based routing** → Falls back to token count if table not categorized
+
+**Usage:**
+```
+Select model [1-7]: 5  # or just press Enter (default)
+
+✓ Selected: local-mix
+Type: Smart Mix (GPT-OSS + Qwen) - Auto-selects best local model
+```
+
+**Benefits:**
+- ✅ FREE - No API costs
+- ✅ Unlimited tokens
+- ✅ Intelligent - Auto-selects optimal model per task
+- ✅ Transparent - Shows which model was selected
+
+### Model Comparison
+
+| Model | Context | Params | Cost | Best For |
+|-------|---------|--------|------|----------|
+| **gpt-5-mini** | 272K | Cloud | $0.25/$2.00 | Default, balanced |
+| **gpt-5** | 272K | Cloud | $1.25/$10.00 | Advanced reasoning |
+| **qwen3:8b** | 128K | 8B | FREE | Anomaly Detection - Fast, large context |
+| **gpt-oss:20b** | 32K | 20B | FREE | Threat Hunting - Better reasoning |
+| **local-mix** | Both | Both | FREE | Auto-optimized per task |
+
+---
+
+## 🔧 Setup & Configuration Guides
+
+### MDE Setup Guide
+
+**Where to Paste Your Credentials:**
+
+Open `_keys.py` and find lines 12-14:
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════
+# Microsoft Defender for Endpoint (MDE) - Advanced Hunting API
+# ═══════════════════════════════════════════════════════════════════════════
+# 👉 PASTE YOUR MDE CREDENTIALS HERE:
+
+MDE_TENANT_ID = "YOUR_TENANT_ID_HERE"        # ← REPLACE THIS
+MDE_CLIENT_ID = "YOUR_CLIENT_ID_HERE"        # ← REPLACE THIS
+MDE_CLIENT_SECRET = "YOUR_CLIENT_SECRET_HERE"  # ← REPLACE THIS
+```
+
+**Replace with your actual values:**
+```python
+MDE_TENANT_ID = "12345678-1234-1234-1234-123456789abc"
+MDE_CLIENT_ID = "87654321-4321-4321-4321-cba987654321"
+MDE_CLIENT_SECRET = "AbC~123XyZ456_VeryLongSecretStringHere789"
+```
+
+**Using MDE:**
+
+When you start CTF Mode, you'll see:
+```
+SELECT DATA SOURCE
+[1] Microsoft Defender for Endpoint (MDE) ← Recommended
+[2] Azure Sentinel / Log Analytics
+
+Select data source [1-2] (default: 1): [Press Enter]
+```
+
+**Benefits of MDE:**
+- ✅ All tables available (DeviceRegistryEvents included!)
+- ✅ Real-time data (no ingestion delay)
+- ✅ Free (included in MDE license)
+- ✅ Best for CTF hunting
+
+### Azure Log Analytics Setup
+
+**1. Authenticate with Azure:**
+```bash
+az login
+```
+
+**2. Set Log Analytics Workspace ID:**
+```python
+# _keys.py
+LOG_ANALYTICS_WORKSPACE_ID = "your-workspace-id"
+OPENAI_API_KEY = "your-openai-api-key"
+```
+
+**3. Verify Connection:**
+The system will test authentication at startup and show available data range.
+
+### Local Model Setup (Ollama)
+
+**1. Install Ollama:**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**2. Pull Models:**
+```bash
+ollama pull qwen3:8b
+ollama pull gpt-oss:20b
+```
+
+**3. Verify:**
+```bash
+ollama list
+```
+
+**4. Test:**
+```bash
+python _main.py
+# Select model [5] or [6] for local models
+```
+
+---
+
+## 🚀 Advanced Features
+
+### Enhanced Anomaly Detection
+
+The Enhanced Anomaly Detection Pipeline transforms routine security scanning into production-grade SOC operations.
+
+**4-Stage Analysis Pipeline:**
+
+1. **Statistical Analysis** (Fast, Factual)
+   - Time-based anomalies (off-hours, weekends)
+   - Frequency anomalies (Z-score > 3σ)
+   - Rare events (< 1% frequency)
+   - Network diversity (unusual IPs)
+
+2. **Baseline Comparison** (Behavioral)
+   - Compare to learned normal patterns
+   - Detect deviations from typical behavior
+   - Updates baseline after each scan
+
+3. **LLM Analysis** (Only on outliers)
+   - Send filtered records to model
+   - Confirm true anomalies vs false positives
+   - Generate detailed findings
+   - **90% token reduction** (only outliers analyzed)
+
+4. **Cross-Table Correlation**
+   - User-based: Multi-stage attacks
+   - Device-based: Compromised hosts
+   - IP-based: Lateral movement
+
+**Results:**
+- Professional SOC analyst summary
+- Risk assessment
+- Prioritized recommendations
+- Attack narratives/timelines
+
+### Custom KQL Expert Mode
+
+For advanced users who want to write their own KQL queries:
+
+**Usage:**
+```
+Query Method:
+[1] Natural Language
+[2] Structured  
+[3] Custom KQL  ← Choose this!
+
+Select: 3
+```
+
+**Enter Your KQL:**
+```
+Enter your KQL query (type 'END' when done):
+  DeviceProcessEvents
+  | where ProcessCommandLine contains "powershell"
+  | where ProcessCommandLine contains "-enc"
+  | project TimeGenerated, AccountName, ProcessCommandLine, SHA256
+  END
+```
+
+**System will:**
+- Auto-add time filter based on your timeframe
+- Execute query
+- Use LLM to filter results based on CTF hints/context
+- Provide flag suggestions and next steps
+
+### IOC Extraction Reference
+
+The system extracts **12 different IOC types**:
+
+| Type | Pattern/Source | Example | Boost |
+|------|---------------|---------|-------|
+| IP Address | IPv4 regex | `79.76.123.251` | 1x |
+| IPv6 Address | IPv6 regex | `2607:fea8::1` | 1x |
+| File Hash (MD5) | 32-char hex | `5d41402abc4b2a76b9719d911017c592` | 5x |
+| File Hash (SHA256) | 64-char hex | `abc123def...` | 5x |
+| Domain | FQDN regex | `malicious.com` | 1x |
+| Email | Email regex | `attacker@bad.com` | 1x |
+| URL | HTTP/HTTPS | `http://exfil.com/data` | 3x |
+| Base64 | Base64 pattern | `UG93ZXJTaGVs...` | 2x |
+| ProcessCommandLine | From logs | `powershell -enc [data]` | **4x** |
+| Parent Command | InitiatingProcess | `cmd.exe /c whoami` | **4x** |
+| Account Name | From CSV | `slflare` | 1x |
+| Device Name | From CSV | `slflarewinsysmo` | 1x |
+
+**Boost** = Relevance multiplier (higher = prioritized in results)
+
+### Enhanced Session Menu
+
+**Multi-level navigation:**
+```
+Level 1: Main Session Menu
+  [C] Continue with existing hunts
+  [N] Start new investigation
+
+Level 2: Project Selection
+  [1] RDP Password Spray (3 flags)
+  [2] Operation Lurker (5 flags)
+  [B] Back
+
+Level 3: Project Actions
+  [1] Continue hunt
+  [2] Rename project
+  [3] Delete project
+  [B] Back
+```
+
+**Features:**
+- ✅ Project renaming capability
+- ✅ Back navigation at each level
+- ✅ Auto-update all files on rename
+- ✅ Multiple sessions supported
+
+### Schema System
+
+The system includes comprehensive Azure schema reference that teaches the LLM exact table structures:
+
+**Features:**
+- Complete table schemas with field types
+- Field descriptions and allowed values
+- KQL syntax rules and best practices
+- Common query patterns per table
+- Example values for each field
+
+**Benefits:**
+- ✅ Correct field names in generated queries
+- ✅ Proper data types
+- ✅ KQL syntax compliance
+- ✅ Reduced query errors
+
+---
+
+## 📚 Reference Materials
+
+### IOC Extraction Patterns
+
+**Command Line Extraction:**
+Commands are extracted if they contain:
+- Suspicious keywords (50+ patterns)
+- Very long (>200 characters - often obfuscated)
+- High special char density (>10 special chars)
+- CTF keywords (`flag{`, `ctf`, `decode`, `hidden`)
+
+**Common Patterns:**
+- PowerShell obfuscation: `powershell.*-enc`, `iex\s*\(`
+- Credential access: `mimikatz`, `procdump`, `reg save`
+- Lateral movement: `psexec`, `wmic`, `net use`
+- Exfiltration: `curl`, `certutil`, `Compress-Archive`
+
+### CTF Flag Hunting Tips
+
+**Quick Reference:**
+```
+Stage 1: Intel Capture
+  → Paste flag info
+  → Type: DONE
+  → Press: Enter
+
+Stage 2: Query Building  
+  → Type: 1  (to execute LLM's query)
+  → Press: Enter
+
+Stage 3: Execution
+  → Nothing to type (automatic)
+
+Stage 4: Analysis
+  → Press: Enter  (just once)
+
+Stage 5: Flag Capture
+  → Type: 1  (to accept answer)
+  → Press: Enter
+
+Stage 6: What's Next
+  → Type: 2  (for next flag)
+  → Press: Enter
+```
+
+**Recovery Options (if rejecting answer):**
+- `[1]` New query → Back to Stage 2
+- `[2]` Re-analyze → Back to Stage 4
+- `[3]` Manual entry → Back to Stage 5
+- `[4]` View raw → Stay in recovery
+- `[5]` Skip flag → Exit
+- `[6]` Exit → Exit
+
+### Model Selection Guide
+
+| Task | Recommended Model | Why |
+|------|------------------|-----|
+| **Threat Hunting** | GPT-OSS:20B | Better reasoning, deep analysis |
+| **Anomaly Detection** | Qwen3:8B | Fast, large context, multi-table scanning |
+| **CTF Mode** | GPT-OSS:20B or GPT-4o | Better KQL generation |
+| **Critical Incident** | GPT-OSS:20B or GPT-5 | Quality and accuracy matter most |
+| **Daily Operations** | Qwen3:8B or local-mix | Speed for routine scans |
+| **Large Log Volumes** | Qwen3:8B | 128K context handles more data |
+
+### KQL Field Reference
+
+**Time Fields:**
+- Azure Log Analytics: `TimeGenerated` (not `Timestamp`)
+- MDE Advanced Hunting: `Timestamp`
+
+**Account Fields (vary by table):**
+- DeviceLogonEvents → `AccountName`
+- DeviceFileEvents → `InitiatingProcessAccountName`
+- SigninLogs → `UserPrincipalName`
+- AzureActivity → `Caller`
+
+**Device Fields:**
+- Most tables → `DeviceName`
+- Some tables → `Computer`
+
+**IP Fields:**
+- DeviceLogonEvents → `RemoteIP`
+- DeviceNetworkEvents → `RemoteIP`, `LocalIP`
+
+### Troubleshooting Quick Reference
+
+| Problem | Solution |
+|---------|----------|
+| Ollama timeout | Timeout increased to 300s, check chunking |
+| Too many alerts | Switch to BALANCED mode, review feedback |
+| No findings | Try BALANCED mode, check patterns |
+| Rate limit errors | Switch to local models, reduce `max_log_lines` |
+| No data returned | Check date range, verify workspace ID |
+| Query errors | Check field names, use schema reference |
 
 ---
 
