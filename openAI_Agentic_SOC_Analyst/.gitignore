@@ -1,0 +1,33 @@
+# API Keys and Secrets - NEVER commit these!
+_keys.py
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session files
+*.jsonl
+_ctf_sessions/
+ctf_sessions/
+
+# Other
+*.log
+
