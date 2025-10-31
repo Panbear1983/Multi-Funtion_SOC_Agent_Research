@@ -335,7 +335,85 @@ def display_threats(threat_list):
             print(f"{Fore.WHITE}The attacker specifically targeted privileged accounts: {', '.join(privileged_accounts)}")
             print(f"{Fore.WHITE}This suggests an attempt to gain elevated privileges for persistence or lateral movement.")
         
-        # Summary assessment
+        # IOC aggregation and classification
+        def _classify_ioc(ioc: str) -> str:
+            """Classify IOC type"""
+            s = str(ioc).strip()
+            if re.match(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', s):
+                return 'ip'
+            if re.match(r'^[A-Fa-f0-9]{64}$', s) or re.match(r'^[A-Fa-f0-9]{32}$', s):
+                return 'hash'
+            if '@' in s and re.match(r'^[A-Za-z0-9._%+-]+@', s):
+                return 'email'
+            if '.' in s and not s.lower().startswith(('device', 'account', 'ip address', 'domain')):
+                return 'domain'
+            return 'other'
+        
+        def _is_private_ip(ip: str) -> bool:
+            """Check if IP is private/internal"""
+            try:
+                octs = [int(x) for x in ip.split('.')]
+                return (
+                    octs[0] == 10 or
+                    (octs[0] == 172 and 16 <= octs[1] <= 31) or
+                    (octs[0] == 192 and octs[1] == 168)
+                )
+            except Exception:
+                return False
+        
+        # Aggregate IOCs from all findings
+        ioc_summary = {
+            'ip': set(),
+            'domain': set(),
+            'hash': set(),
+            'email': set(),
+            'other': set()
+        }
+        
+        for threat in threat_list:
+            for ioc in threat.get('indicators_of_compromise', []) or []:
+                # Strip any "Field: " labels
+                val = str(ioc).split(':', 1)[-1].strip() if ':' in str(ioc) else str(ioc).strip()
+                bucket = _classify_ioc(val)
+                ioc_summary[bucket].add(val)
+        
+        # Print IOC SUMMARY (before ASSESSMENT)
+        if any(ioc_summary.values()):
+            print(f"\n{Fore.LIGHTCYAN_EX}IOC SUMMARY (deduplicated):")
+            if ioc_summary['ip']:
+                private = sorted([ip for ip in ioc_summary['ip'] if _is_private_ip(ip)])
+                public = sorted([ip for ip in ioc_summary['ip'] if not _is_private_ip(ip)])
+                print(f"{Fore.WHITE}  IPs: {len(ioc_summary['ip'])} total | Public: {len(public)} | Private: {len(private)}")
+                if public:
+                    print(f"{Fore.LIGHTRED_EX}    ↳ Public sample: {Fore.WHITE}{', '.join(public[:5])}")
+                if private:
+                    print(f"{Fore.LIGHTBLACK_EX}    ↳ Private sample: {Fore.WHITE}{', '.join(private[:5])}")
+            if ioc_summary['domain']:
+                print(f"{Fore.WHITE}  Domains: {len(ioc_summary['domain'])}")
+                print(f"{Fore.LIGHTBLACK_EX}    ↳ Sample: {Fore.WHITE}{', '.join(sorted(list(ioc_summary['domain']))[:5])}")
+            if ioc_summary['hash']:
+                print(f"{Fore.WHITE}  Hashes: {len(ioc_summary['hash'])}")
+                print(f"{Fore.LIGHTBLACK_EX}    ↳ Sample: {Fore.WHITE}{', '.join(sorted(list(ioc_summary['hash']))[:5])}")
+            if ioc_summary['email']:
+                print(f"{Fore.WHITE}  Emails: {len(ioc_summary['email'])}")
+                print(f"{Fore.LIGHTBLACK_EX}    ↳ Sample: {Fore.WHITE}{', '.join(sorted(list(ioc_summary['email']))[:5])}")
+        
+        # Calculate assessment stats
+        confidence_counts = {'High': 0, 'Medium': 0, 'Low': 0}
+        tables_touched = set()
+        for threat in threat_list:
+            conf = str(threat.get('confidence', 'Unknown')).strip()
+            if 'High' in conf:
+                confidence_counts['High'] += 1
+            elif 'Medium' in conf:
+                confidence_counts['Medium'] += 1
+            else:
+                confidence_counts['Low'] += 1
+            # Extract table name from tags or notes if available
+            if '_table_name' in threat:
+                tables_touched.add(threat['_table_name'])
+        
+        # Summary assessment with stats
         print(f"\n{Fore.LIGHTCYAN_EX}ASSESSMENT:")
         if len(threat_list) > 3:
             print(f"{Fore.WHITE}This appears to be a coordinated attack campaign with multiple attack vectors.")
@@ -343,6 +421,60 @@ def display_threats(threat_list):
             print(f"{Fore.WHITE}High-confidence threats indicate active compromise requiring immediate response.")
         else:
             print(f"{Fore.WHITE}Suspicious activity detected that warrants further investigation and monitoring.")
+        
+        # Print stats
+        stats_parts = [f"{len(threat_list)} findings"]
+        if confidence_counts['High'] > 0:
+            stats_parts.append(f"High: {confidence_counts['High']}")
+        if confidence_counts['Medium'] > 0:
+            stats_parts.append(f"Medium: {confidence_counts['Medium']}")
+        if confidence_counts['Low'] > 0:
+            stats_parts.append(f"Low: {confidence_counts['Low']}")
+        if tables_touched:
+            stats_parts.append(f"Tables: {', '.join(sorted(tables_touched))}")
+        entity_parts = []
+        if target_devices:
+            entity_parts.append(f"{len(target_devices)} device{'s' if len(target_devices) > 1 else ''}")
+        if usernames:
+            entity_parts.append(f"{len(usernames)} account{'s' if len(usernames) > 1 else ''}")
+        if source_ips:
+            entity_parts.append(f"{len(source_ips)} IP{'s' if len(source_ips) > 1 else ''}")
+        if entity_parts:
+            stats_parts.append(f"Entities: {', '.join(entity_parts)}")
+        
+        if stats_parts:
+            print(f"{Fore.LIGHTBLACK_EX}Stats: {Fore.WHITE}{' | '.join(stats_parts)}")
+        
+        # CORRELATED ACTIONS (based on observed IOCs/entities)
+        public_ips = [ip for ip in ioc_summary.get('ip', []) if not _is_private_ip(ip)]
+        has_domains = len(ioc_summary.get('domain', [])) > 0
+        has_hashes = len(ioc_summary.get('hash', [])) > 0
+        has_accounts = len(usernames) > 0
+        has_devices = len(target_devices) > 0
+        
+        if public_ips or has_domains or has_hashes or has_accounts or has_devices or source_ips:
+            print(f"\n{Fore.LIGHTGREEN_EX}CORRELATED ACTIONS:")
+            # Network perimeter
+            if public_ips:
+                print(f"{Fore.WHITE}• Block public IPs at perimeter (sample): {', '.join(sorted(public_ips)[:5])}")
+            # DNS
+            if has_domains:
+                domain_sample = sorted(list(ioc_summary['domain']))[:5]
+                print(f"{Fore.WHITE}• Add suspicious domains to DNS blocklist/sinkhole (sample): {', '.join(domain_sample)}")
+            # Endpoint
+            if has_hashes:
+                print(f"{Fore.WHITE}• Push EDR scan/isolation; search for file hashes; deploy YARA rules")
+            # Identity
+            if has_accounts:
+                account_sample = sorted(list(usernames))[:3]
+                print(f"{Fore.WHITE}• Reset creds and revoke sessions for impacted accounts (sample): {', '.join(account_sample)}")
+            # Host containment
+            if has_devices:
+                device_sample = sorted(list(target_devices))[:3]
+                print(f"{Fore.WHITE}• Isolate high-risk devices pending triage (sample): {', '.join(device_sample)}")
+            # Hunting pivots
+            if source_ips:
+                print(f"{Fore.WHITE}• Pivot hunt: peer devices and same-source IP activity across SigninLogs/DeviceNetworkEvents (last 24–72h)")
         
         print(f"\n{Fore.LIGHTYELLOW_EX}RECOMMENDED IMMEDIATE ACTIONS:")
         print(f"{Fore.WHITE}1. Isolate affected devices and accounts")
@@ -432,3 +564,59 @@ def sanitize_query_context(query_context):
     query_context["fields"] = ', '.join(query_context["fields"])
     
     return query_context
+
+
+def enrich_findings_with_entities_and_vectors(findings):
+    """Add inferred attack_vector and summarize top devices/accounts.
+
+    - Preserves existing fields
+    - Adds per-finding 'attack_vector'
+    - Returns (enriched_findings, summary_dict)
+    """
+    device_counts = {}
+    account_counts = {}
+
+    def infer_vector(f):
+        tags = set((f.get('tags') or []))
+        desc = (f.get('description') or '').lower()
+        tech = ((f.get('mitre') or {}).get('technique') or '').lower()
+
+        if 'impossible_travel' in tags or 't1078' in tech:
+            return 'Credential misuse / Account takeover'
+        if 'powershell_obfuscation' in tags or 't1059' in tech:
+            return 'Scripted execution / Living-off-the-land'
+        if 'lateral_movement' in tags or 't1021' in tech:
+            return 'Lateral movement'
+        if 'defense_evasion' in tags or 't1562' in tech:
+            return 'Defense evasion'
+        if 'data_exfiltration' in tags or 't1041' in tech:
+            return 'Data exfiltration'
+        if 'lolbins' in tags or 't1218' in tech:
+            return 'Signed binary proxy execution'
+        if 'ransomware' in tags or 't1486' in tech:
+            return 'Impact: Data encrypted'
+        if 'network_suspicious' in tags or 't1071' in tech:
+            return 'C2 or suspicious egress'
+        if 'reconnaissance' in tags or 't1046' in tech:
+            return 'Reconnaissance'
+        if 'credential' in desc:
+            return 'Credential access/misuse'
+        return 'Uncategorized'
+
+    enriched = []
+    for f in findings or []:
+        if f.get('device_name'):
+            device_counts[f['device_name']] = device_counts.get(f['device_name'], 0) + 1
+        if f.get('account_name'):
+            account_counts[f['account_name']] = account_counts.get(f['account_name'], 0) + 1
+
+        if not f.get('attack_vector'):
+            f['attack_vector'] = infer_vector(f)
+        enriched.append(f)
+
+    summary = {
+        'top_devices': sorted(device_counts.items(), key=lambda x: x[1], reverse=True)[:5],
+        'top_accounts': sorted(account_counts.items(), key=lambda x: x[1], reverse=True)[:5],
+    }
+
+    return enriched, summary

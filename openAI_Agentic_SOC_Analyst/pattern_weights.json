@@ -14,9 +14,9 @@
   "ip_address": 0.48,
   "device_name": 0.48,
   "account_name": 0.48,
-  "domain": 1.1,
-  "anomaly-scan": 1.33,
-  "DeviceProcessEvents": 1.33,
-  "DeviceNetworkEvents": 1.33,
-  "SigninLogs": 1.33
+  "domain": 1.61,
+  "anomaly-scan": 1.95,
+  "DeviceProcessEvents": 1.95,
+  "DeviceNetworkEvents": 1.95,
+  "SigninLogs": 1.95
 }

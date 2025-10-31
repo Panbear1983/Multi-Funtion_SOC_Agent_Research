@@ -989,9 +989,13 @@ class QwenEnhancer:
             'DeviceLogonEvents': ['logontype', 'accountname', 'remoteip'],
             'DeviceFileEvents': ['filename', 'folderpath', 'sha256'],
             'DeviceRegistryEvents': ['registrykey', 'registryvaluename'],
+            'AlertInfo': ['alertid', 'title', 'severity', 'status'],
+            'AlertEvidence': ['alertid', 'evidencetype', 'evidencevalue'],
             'SigninLogs': ['userprincipalname', 'appdisplayname'],
+            'AuditLogs': ['operationname', 'category', 'result', 'initiatedby'],
             'AzureActivity': ['operationnamevalue', 'caller'],
-            'AzureNetworkAnalytics_CL': ['flowtype_s', 'srcpublicips_s']
+            'AzureNetworkAnalytics_CL': ['flowtype_s', 'srcpublicips_s'],
+            'AzureNetworkAnalyticsIPDetails_CL': ['publicipaddress_s', 'publicipdetails_s', 'organization_s']
         }
         
         # Find best match
@@ -1073,14 +1077,24 @@ class QwenEnhancer:
                     table_name = "DeviceNetworkEvents"
                 elif "DeviceLogonEvents" in content:
                     table_name = "DeviceLogonEvents"
-                elif "AzureActivity" in content:
-                    table_name = "AzureActivity"
-                elif "SigninLogs" in content:
-                    table_name = "SigninLogs"
                 elif "DeviceFileEvents" in content:
                     table_name = "DeviceFileEvents"
+                elif "DeviceRegistryEvents" in content:
+                    table_name = "DeviceRegistryEvents"
+                elif "AlertInfo" in content:
+                    table_name = "AlertInfo"
+                elif "AlertEvidence" in content:
+                    table_name = "AlertEvidence"
+                elif "SigninLogs" in content:
+                    table_name = "SigninLogs"
+                elif "AuditLogs" in content:
+                    table_name = "AuditLogs"
+                elif "AzureActivity" in content:
+                    table_name = "AzureActivity"
                 elif "AzureNetworkAnalytics_CL" in content:
                     table_name = "AzureNetworkAnalytics_CL"
+                elif "AzureNetworkAnalyticsIPDetails_CL" in content:
+                    table_name = "AzureNetworkAnalyticsIPDetails_CL"
                 break
         
         if not log_data:
@@ -1156,20 +1170,44 @@ class QwenEnhancer:
         enhanced_messages = self._enhance_messages_with_rules(messages, rule_findings, iocs)
         
         # Get LLM analysis with timeout handling
-        print(f"{Fore.LIGHTGREEN_EX}Getting LLM analysis from {model_name}...{Fore.RESET}")
+        print(f"{Fore.LIGHTGREEN_EX}Getting LLM analysis from {model_name} (streaming)...{Fore.RESET}")
+        buffer = ""
+        llm_findings = []
         try:
-            llm_content = OLLAMA_CLIENT.chat(messages=enhanced_messages, model_name=model_name, timeout=180)
+            for chunk in OLLAMA_CLIENT.chat_stream(messages=enhanced_messages, model_name=model_name):
+                try:
+                    obj = json.loads(chunk)
+                    msg = (obj.get("message") or {}).get("content", "") or obj.get("response", "")
+                    if msg:
+                        buffer += msg
+                except Exception:
+                    buffer += chunk if isinstance(chunk, str) else ""
+        except KeyboardInterrupt:
+            print(f"{Fore.YELLOW}Cancelled by user. Returning partial results if possible.{Fore.RESET}")
         except Exception as e:
             print(f"{Fore.LIGHTRED_EX}LLM timeout/error: {e}{Fore.RESET}")
-            print(f"{Fore.YELLOW}Falling back to rule-based findings only{Fore.RESET}")
-            return {"findings": rule_findings}
-        
-        try:
-            llm_results = json.loads(llm_content)
-            llm_findings = llm_results.get("findings", [])
-        except json.JSONDecodeError:
-            print(f"{Fore.YELLOW}LLM returned invalid JSON, using rule-based findings only")
-            llm_findings = []
+            print(f"{Fore.YELLOW}Falling back to rule-based findings + partial text if any{Fore.RESET}")
+
+        if buffer.strip():
+            try:
+                llm_results = json.loads(buffer)
+                llm_findings = llm_results.get("findings", [])
+            except json.JSONDecodeError:
+                # salvage partial by attaching as a narrative note and try extracting entities
+                partial_text = buffer[-4000:]
+                devices = re.findall(r'(?:DeviceName|Computer)\s*[:=]\s*([A-Za-z0-9._-]{2,})', partial_text)
+                accounts = re.findall(r'(?:AccountName|User|UPN|UserPrincipalName)\s*[:=]\s*([A-Za-z0-9._@-]{3,})', partial_text)
+                llm_findings = [{
+                    "title": "Partial LLM Analysis (incomplete)",
+                    "description": "LLM response was interrupted. Partial text captured.",
+                    "confidence": "Low",
+                    "log_lines": [],
+                    "indicators_of_compromise": [],
+                    "tags": ["partial", "llm-analysis"],
+                    "notes": partial_text,
+                    **({"device_name": devices[0]} if devices else {}),
+                    **({"account_name": accounts[0]} if accounts else {})
+                }]
         
         # Combine and deduplicate findings
         combined_findings = self._combine_findings(rule_findings, llm_findings)
@@ -1181,6 +1219,27 @@ class QwenEnhancer:
         print(f"{Fore.WHITE}Enhanced analysis complete: {len(combined_findings)} total findings")
         
         return {"findings": combined_findings}
+
+    def apply_rule_based_patterns_to_csv(self, csv_text):
+        """Apply rule-based patterns to CSV text and return findings and IOCs"""
+        try:
+            # Detect table name from CSV content
+            table_name = self._detect_table_from_csv(csv_text)
+            
+            # Analyze logs with rules
+            rule_findings = self.analyze_logs_with_rules(csv_text, table_name)
+            
+            # Extract IOCs from findings
+            iocs = []
+            for finding in rule_findings:
+                if 'ioc' in finding and finding['ioc']:
+                    iocs.append(finding['ioc'])
+            
+            return rule_findings, iocs
+            
+        except Exception as e:
+            print(f"{Fore.YELLOW}Rule-based pattern analysis error: {e}{Fore.RESET}")
+            return [], []
 
     def _enhance_messages_with_rules(self, messages, rule_findings, iocs):
         """Add rule-based context to LLM messages"""

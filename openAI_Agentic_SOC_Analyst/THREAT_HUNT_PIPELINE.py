@@ -89,18 +89,30 @@ def get_structured_query_params():
         print(f"{Fore.WHITE}[2] DeviceProcessEvents (process execution)")
         print(f"{Fore.WHITE}[3] DeviceNetworkEvents (network connections)")
         print(f"{Fore.WHITE}[4] DeviceFileEvents (file operations)")
-        print(f"{Fore.WHITE}[5] SigninLogs (Azure AD sign-ins)")
-        print(f"{Fore.WHITE}[6] AzureActivity (Azure resource operations){Fore.RESET}\n")
+        print(f"{Fore.WHITE}[5] DeviceRegistryEvents (registry modifications)")
+        print(f"{Fore.WHITE}[6] SigninLogs (Azure AD sign-ins)")
+        print(f"{Fore.WHITE}[7] AuditLogs (Azure AD audit events)")
+        print(f"{Fore.WHITE}[8] AzureActivity (Azure resource operations)")
+        print(f"{Fore.WHITE}[9] AlertInfo (alert metadata)")
+        print(f"{Fore.WHITE}[10] AlertEvidence (alert details)")
+        print(f"{Fore.WHITE}[11] AzureNetworkAnalytics_CL (NSG flow logs)")
+        print(f"{Fore.WHITE}[12] AzureNetworkAnalyticsIPDetails_CL (IP details from NSG){Fore.RESET}\n")
         
-        table_choice = input(f"{Fore.LIGHTGREEN_EX}Select table [1-6]: {Fore.RESET}").strip()
+        table_choice = input(f"{Fore.LIGHTGREEN_EX}Select table [1-12]: {Fore.RESET}").strip()
         
         table_map = {
             '1': 'DeviceLogonEvents',
             '2': 'DeviceProcessEvents',
             '3': 'DeviceNetworkEvents',
             '4': 'DeviceFileEvents',
-            '5': 'SigninLogs',
-            '6': 'AzureActivity'
+            '5': 'DeviceRegistryEvents',
+            '6': 'SigninLogs',
+            '7': 'AuditLogs',
+            '8': 'AzureActivity',
+            '9': 'AlertInfo',
+            '10': 'AlertEvidence',
+            '11': 'AzureNetworkAnalytics_CL',
+            '12': 'AzureNetworkAnalyticsIPDetails_CL'
         }
         
         table_name = table_map.get(table_choice, 'DeviceLogonEvents')
@@ -134,7 +146,7 @@ def get_structured_query_params():
         print(f"\n{Fore.YELLOW}Cancelled.{Fore.RESET}")
         return None
 
-def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_config, timerange_hours, start_date, end_date, investigation_context="", use_llm_query=False, use_custom_kql=False):
+def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_config, timerange_hours, start_date, end_date, investigation_context="", use_llm_query=False, use_custom_kql=False, guidance_on: bool = False, known_killchain: str = ""):
     """Execute targeted threat hunting workflow"""
     
     # Import required modules
@@ -349,6 +361,36 @@ def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_con
         
         number_of_records = law_query_results['count']
         print(f"{Fore.WHITE}{number_of_records} record(s) returned.\n")
+
+        # Post-query confirmation with real size/ETA
+        try:
+            import CONFIRMATION_MANAGER
+            import TIME_ESTIMATOR
+            records_csv = law_query_results.get("records", "")
+            approx_tokens = max(1, len(records_csv) // 4)  # ~4 chars/token
+
+            # Choose a conservative limit for hybrid/local models
+            if model == "local-mix":
+                limit = min(TIME_ESTIMATOR.get_model_context_limit('qwen3:8b'),
+                            TIME_ESTIMATOR.get_model_context_limit('gpt-oss:20b'))
+            else:
+                limit = TIME_ESTIMATOR.get_model_context_limit(model)
+
+            # Always confirm right before inference using real size/ETA
+            cost_info = CONFIRMATION_MANAGER.get_cost_info(model)
+            ok = CONFIRMATION_MANAGER.confirm_analysis_with_time_estimate(
+                model_name=model,
+                input_tokens=approx_tokens,
+                cost_info=cost_info,
+                investigation_mode="threat_hunt",
+                severity_config=severity_config
+            )
+            if not ok:
+                print(f"{Fore.YELLOW}Cancelled before analysis. Returning to menu.{Fore.RESET}")
+                return None, query_context
+        except Exception:
+            # Non-fatal: if estimation fails, continue without confirmation
+            pass
     else:
         # Custom KQL: already executed, just display context
         number_of_records = law_query_results['count']
@@ -359,6 +401,24 @@ def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_con
         print(f"{Fore.WHITE}  Records: {Fore.LIGHTCYAN_EX}{number_of_records}")
         print(f"{Fore.WHITE}  Columns: {Fore.LIGHTCYAN_EX}{query_context['fields']}")
         print(f"{Fore.LIGHTCYAN_EX}{'='*70}\n")
+        # Post-query confirmation with real size/ETA for Custom KQL path
+        try:
+            import CONFIRMATION_MANAGER
+            records_csv = law_query_results.get("records", "")
+            approx_tokens = max(1, len(records_csv) // 4)
+            cost_info = CONFIRMATION_MANAGER.get_cost_info(model)
+            ok = CONFIRMATION_MANAGER.confirm_analysis_with_time_estimate(
+                model_name=model,
+                input_tokens=approx_tokens,
+                cost_info=cost_info,
+                investigation_mode="threat_hunt",
+                severity_config=severity_config
+            )
+            if not ok:
+                print(f"{Fore.YELLOW}Cancelled before analysis. Returning to menu.{Fore.RESET}")
+                return None, query_context
+        except Exception:
+            pass
     
     if number_of_records == 0:
         print(f"{Fore.YELLOW}No data found. Try adjusting your query or time range.{Fore.RESET}")
@@ -388,7 +448,9 @@ Look for patterns, encoded data, or anomalies that match the investigation hints
         user_prompt=user_prompt,
         table_name=query_context["table_name"],
         log_data=law_query_results["records"],
-        investigation_context=investigation_context  # Pass investigation hints to LLM
+        investigation_context=investigation_context,  # Pass investigation hints to LLM
+        guidance_on=guidance_on,
+        known_killchain=known_killchain
     )
     
     threat_hunt_system_message = PROMPT_MANAGEMENT.SYSTEM_PROMPT_THREAT_HUNT
@@ -403,13 +465,24 @@ Look for patterns, encoded data, or anomalies that match the investigation hints
     
     # Execute hunt
     start_time = time.time()
+    # Prepare investigation context for hybrid model
+    investigation_context = {
+        'mode': 'threat_hunt',
+        'query_method': 'llm' if use_llm_query else 'structured',
+        'table_name': query_context.get('table_name'),
+        'time_range_hours': timerange_hours,
+        'start_date': start_date,
+        'end_date': end_date
+    }
+    
     hunt_results = EXECUTOR.hunt(
         openai_client=openai_client,
         threat_hunt_system_message=threat_hunt_system_message,
         threat_hunt_user_message=threat_hunt_user_message,
         openai_model=model,
         severity_config=severity_config,
-        table_name=query_context.get('table_name')  # Pass table name for smart model selection
+        table_name=query_context.get('table_name'),  # Pass table name for smart model selection
+        investigation_context=investigation_context
     )
     
     if not hunt_results:

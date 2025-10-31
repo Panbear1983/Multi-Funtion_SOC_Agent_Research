@@ -50,22 +50,43 @@ python _main.py
 # 4. Select severity level
 [1] Relaxed  [2] Balanced  [3] Strict
 
-# 5. Set investigation timeframe (shows available data)
+# 5. Select framework profile
+[1] None (General Hunting)
+[2] OWASP (App/API)
+[3] STIG (Hardening)
+[4] CIS (Baseline)
+[5] MITRE ATT&CK
+
+# 6. Select result view mode
+[1] Strict (default)
+[2] Only Critical (High-Signal subset)
+[3] Critical + Strict (two sets)
+
+# 7. Set investigation timeframe (shows available data)
 ✓ Data Available: July 17 - Oct 9 (84 days)
 Start date: 720  (30 days ago)
 End date: (press Enter for now)
 
-# 6. Specify hunt parameters (Threat Hunting mode)
+# 8. Confirmation (shows time estimate and processing details)
+Model: gpt-oss:20b
+Mode: Threat Hunt
+Severity: Balanced
+Input size: 45,230 tokens
+Estimated time: 28s
+Cost: FREE (Local/Offline model)
+Proceed with analysis? (y/n): y
+
+# 9. Specify hunt parameters (Threat Hunting mode only)
 Select table: 1 (DeviceLogonEvents)
 DeviceName: (optional)
 AccountName: admin
 
-# 7. Review findings with labeled IOCs
+# 10. Review findings with labeled IOCs
 Indicators of Compromise:
   - AccountName: admin
   - DeviceName: DESKTOP-001
 
-# 8. Provide feedback for learning
+# 11. Provide feedback for learning
 Rate this analysis: 4
 Comments: Good detection
 ```
@@ -324,6 +345,65 @@ Comments: Good detection
 - Pattern-based KQL generation
 - Offline operation support
 
+### Compliance & Framework Integration
+
+#### 19. **Compliance Profiles** (`COMPLIANCE_PROFILES.py`)
+- Framework profile selection (OWASP, STIG, CIS, MITRE)
+- Table scope filtering per profile
+- Rulepack integration
+- Profile-aware severity configuration
+
+#### 20. **Insight Engine** (`INSIGHT_ENGINE.py`)
+- Framework-aware post-processing
+- MITRE ATT&CK mapping enrichment
+- Report generation sections
+- Control mapping
+
+#### 21. **Rulepack Engine** (`RULEPACK_ENGINE.py`)
+- Rulepack loading system
+- Profile-specific KQL constraints
+- Table scope filtering
+- Projection guidance
+
+#### 22. **Sigma Adapter** (`SIGMA_ADAPTER.py`)
+- Sigma rule hint integration
+- Pattern matching hints
+- Killchain-aware suggestions
+
+### Analysis & Confirmation
+
+#### 23. **Confirmation Manager** (`CONFIRMATION_MANAGER.py`)
+- Pre-commit confirmation with time estimates
+- Analysis parameters display
+- Cost information
+- Processing details preview
+
+#### 24. **Time Estimator** (`TIME_ESTIMATOR.py`)
+- Universal time estimation for all models
+- OpenAI and Ollama model profiles
+- Chunked processing time calculation
+- Hybrid model time estimates
+
+#### 25. **Hybrid Engine** (`HYBRID_ENGINE.py`)
+- Dynamic hybrid model selection
+- Parallel processing (Qwen + GPT-OSS)
+- Intelligent result fusion
+- Context-aware model routing
+
+### Memory & Validation
+
+#### 26. **Retrieval Memory** (`RETRIEVAL_MEMORY.py`)
+- Killchain exemplar retrieval
+- Pattern matching hints
+- Evidence-focused guidance
+- Known attack pattern recognition
+
+#### 27. **Schemas** (`SCHEMAS.py`)
+- Pydantic schema validation
+- Finding structure validation
+- Evidence-bound extensions
+- MITRE mapping schema
+
 ---
 
 ## 🎯 Operational Modes
@@ -338,15 +418,19 @@ Comments: Good detection
 
 **Workflow:**
 1. Select target table from menu (DeviceLogonEvents, DeviceProcessEvents, etc.)
-2. Specify filters:
+2. Select model and severity level
+3. Select framework profile (optional)
+4. Select result view mode
+5. Set investigation timeframe (with auto-detected available data range)
+6. Specify filters:
    - DeviceName (optional) - e.g., "DESKTOP-001"
    - AccountName (optional) - e.g., "admin"
-3. Set investigation timeframe (with auto-detected available data range)
-4. System builds and executes KQL query with explicit dates
-5. Analyzes results using selected LLM
-6. Displays findings with labeled IOCs (DeviceName:, AccountName:)
-7. Optional: Interactive chat mode for deeper analysis (local models)
-8. Collects feedback for learning
+7. Review confirmation with time estimate
+8. System builds and executes KQL query with explicit dates
+9. Analyzes results using selected LLM
+10. Displays findings with labeled IOCs (DeviceName:, AccountName:)
+11. Optional: Interactive chat mode for deeper analysis (local models)
+12. Collects feedback for learning
 
 **Example Investigations:**
 - Table: DeviceLogonEvents → AccountName: admin → Last 48 hours
@@ -1123,6 +1207,8 @@ python _main.py
 Mode: [1] Threat Hunting
 Model: [5] gpt-oss:20b (recommended for Threat Hunting)
 Severity: [2] Balanced
+Framework Profile: [1] None (General Hunting)
+Result View Mode: [1] Strict (default)
 
 Timeframe:
   ✓ Data Available: July 17 - Oct 9 (84 days)
@@ -1133,6 +1219,15 @@ Hunt Parameters:
   Table: [2] DeviceProcessEvents
   DeviceName: LAPTOP-001
   AccountName: (press Enter - all accounts)
+
+Confirmation:
+  Model: gpt-oss:20b
+  Mode: Threat Hunt
+  Severity: Balanced
+  Input size: 42,180 tokens
+  Estimated time: 25s
+  Cost: FREE (Local/Offline model)
+  Proceed with analysis? (y/n): y
 
 → KQL query built with TimeGenerated filter
 → Queries Azure Log Analytics
@@ -1150,6 +1245,8 @@ Hunt Parameters:
 Mode: [2] Anomaly Detection
 Model: [6] qwen (recommended for Anomaly Detection)
 Severity: [2] Balanced
+Framework Profile: [5] MITRE ATT&CK
+Result View Mode: [2] Only Critical
 
 Timeframe:
   ✓ Data Available: July 17 - Oct 9 (84 days)
@@ -1162,11 +1259,21 @@ Scan Configuration:
   User filter: (all)
   Tables: [1] All tables
 
+Confirmation:
+  Model: qwen3:8b
+  Mode: Anomaly Detection
+  Severity: Balanced
+  Input size: 98,450 tokens
+  Estimated time: 52s (2 chunks)
+  Cost: FREE (Local/Offline model)
+  Proceed with analysis? (y/n): y
+
 → Scans DeviceLogonEvents (23 anomalies)
 → Scans DeviceProcessEvents (5 anomalies)
 → Scans DeviceNetworkEvents (12 anomalies)
 → Scans SigninLogs (3 anomalies)
 → Detects 43 total anomalies with labeled IOCs
+→ Filters to Critical findings only (12 high-confidence)
 → Correlates findings across tables
 → Identifies 2 attack chains
 → Displays results with clear field labels
@@ -1255,6 +1362,59 @@ Learned weights are stored in `pattern_weights.json`:
   "lateral_movement": 2.40
 }
 ```
+
+### Compliance Profile Configuration
+
+Edit `COMPLIANCE_PROFILES.py`:
+
+```python
+PROFILES = {
+    'none': {
+        'name': 'No Framework',
+        'description': 'General threat hunting without framework constraints.',
+        'table_scope': None,
+        'include_rulepacks': [],
+    },
+    'owasp': {
+        'name': 'OWASP (App/API Focus)',
+        'description': 'Web/app/API centric checks and detections.',
+        'table_scope': ['SigninLogs', 'AppGatewayFirewallLog'],
+        'include_rulepacks': ['owasp_auth_abuse'],
+    },
+    'stig': {
+        'name': 'STIG (Hardening/Compliance)',
+        'description': 'System hardening, policy drift, control compliance.',
+        'table_scope': ['DeviceRegistryEvents', 'DeviceEvents', 'AzureActivity'],
+        'include_rulepacks': ['stig_baseline_controls'],
+    },
+    'cis': {
+        'name': 'CIS Benchmarks',
+        'description': 'Baseline configuration controls and deviations.',
+        'table_scope': ['AzureActivity', 'SigninLogs', 'DeviceEvents'],
+        'include_rulepacks': ['cis_baseline_controls'],
+    },
+    'mitre': {
+        'name': 'MITRE ATT&CK',
+        'description': 'Technique-aligned detections and prioritization.',
+        'table_scope': None,
+        'include_rulepacks': ['mitre_core_ttps'],
+    },
+}
+```
+
+**Profile Features:**
+- **Table Scope**: Limits analysis to specific tables (e.g., OWASP focuses on SigninLogs)
+- **Rulepacks**: Loads profile-specific detection rules
+- **Alert Style**: Custom color coding per framework
+- **Merging**: Profiles merge with severity config (non-destructive)
+
+### Result View Mode
+
+Controls post-processing of findings:
+
+- **Strict (default)**: All findings per severity level
+- **Only Critical**: High-confidence findings only (High-Signal subset)
+- **Critical + Strict**: Two separate sets for comprehensive analysis
 
 ---
 
@@ -2109,6 +2269,100 @@ The system includes comprehensive Azure schema reference that teaches the LLM ex
 - ✅ KQL syntax compliance
 - ✅ Reduced query errors
 
+### Compliance Framework Integration
+
+The system supports multiple compliance frameworks with profile-aware detection:
+
+**Supported Frameworks:**
+- **OWASP**: Application and API security focus (SigninLogs, AppGatewayFirewallLog)
+- **STIG**: System hardening and compliance (DeviceRegistryEvents, DeviceEvents, AzureActivity)
+- **CIS**: Baseline configuration controls (AzureActivity, SigninLogs, DeviceEvents)
+- **MITRE ATT&CK**: Technique-aligned detections (all tables)
+
+**How It Works:**
+1. Select framework profile during setup
+2. System automatically filters tables per framework
+3. Loads framework-specific rulepacks
+4. Applies profile-aware detection patterns
+5. Enriches findings with control mappings (via Insight Engine)
+
+**Benefits:**
+- ✅ Focused analysis per framework scope
+- ✅ Reduced false positives through table filtering
+- ✅ Compliance-aligned findings
+- ✅ Framework-specific reporting
+
+### Time Estimation System
+
+The system provides accurate time estimates for all models before analysis:
+
+**Features:**
+- **Model-Specific Profiles**: Different estimation algorithms for OpenAI vs Ollama
+- **Chunking Awareness**: Calculates time for chunked processing
+- **Hybrid Models**: Parallel processing time estimates
+- **Display Formatting**: Human-readable time display (e.g., "28s", "2m 15s", "45s (3 chunks)")
+
+**Supported Models:**
+```python
+OpenAI Models:
+  - gpt-4.1-nano: 50K tokens/sec
+  - gpt-4.1: 40K tokens/sec
+  - gpt-5-mini: 60K tokens/sec
+  - gpt-5: 45K tokens/sec
+
+Ollama Models:
+  - qwen3:8b: 2K tokens/sec (128K context)
+  - gpt-oss:20b: 1K tokens/sec (32K context)
+  - local-mix: Parallel processing (max of both models)
+```
+
+**Example Display:**
+```
+Estimated time: 28s
+Estimated time: 2m 15s (3 chunks)
+Estimated time: 45s (2 chunks) (parallel)
+```
+
+### Pre-Analysis Confirmation
+
+Before starting analysis, the system shows a comprehensive confirmation screen:
+
+**Displayed Information:**
+- Selected model and investigation mode
+- Severity level and framework profile
+- Estimated input size (tokens)
+- Estimated processing time
+- Cost information (FREE for local models)
+- Processing details:
+  - Chunked vs single-pass processing
+  - Local/offline vs cloud API
+  - Parallel processing for hybrid models
+
+**Example Confirmation:**
+```
+════════════════════════════════════════════════════════════
+📊 ANALYSIS CONFIRMATION
+════════════════════════════════════════════════════════════
+Model: gpt-oss:20b
+Mode: Threat Hunt
+Severity: Balanced
+Input size: 45,230 tokens
+Estimated time: 28s
+Cost: FREE (Local/Offline model)
+
+Processing Details:
+  • Single-pass processing
+  • Local/Offline model (no API calls)
+
+Proceed with analysis? (y/n):
+```
+
+**Benefits:**
+- ✅ Transparency before processing
+- ✅ Cost awareness (especially for cloud models)
+- ✅ Time planning
+- ✅ Opportunity to adjust parameters
+
 ---
 
 ## 📚 Reference Materials
@@ -2238,6 +2492,16 @@ openAI_Agentic_SOC_Analyst/
 ├── UTILITIES.py                  # Helper functions
 ├── CHAT_MODE.py                  # Interactive chat
 │
+├── COMPLIANCE_PROFILES.py        # Framework profile selection
+├── CONFIRMATION_MANAGER.py       # Pre-analysis confirmation
+├── TIME_ESTIMATOR.py             # Time estimation system
+├── HYBRID_ENGINE.py              # Hybrid model engine
+├── INSIGHT_ENGINE.py              # Framework-aware insights
+├── RETRIEVAL_MEMORY.py           # Killchain exemplar retrieval
+├── RULEPACK_ENGINE.py             # Rulepack loading
+├── SIGMA_ADAPTER.py               # Sigma rule hints
+├── SCHEMAS.py                     # Schema validation
+│
 ├── _threats.jsonl                # Detected threats (output)
 ├── _analysis_feedback.jsonl      # User feedback (learning)
 ├── pattern_weights.json          # Learned weights
@@ -2300,6 +2564,10 @@ An intelligent, self-learning SOC analyst that:
 6. **Works Offline**: Local models for privacy
 7. **Maps to MITRE**: 610+ ATT&CK technique mappings
 8. **Improves Over Time**: Pattern weights adjust based on feedback
+9. **Compliance Frameworks**: OWASP, STIG, CIS, MITRE profile support
+10. **Time Estimation**: Accurate processing time estimates for all models
+11. **Pre-Analysis Confirmation**: Transparent cost and time information
+12. **Result View Modes**: Strict, Critical-only, or both for comprehensive analysis
 
 ### Key Innovation
 
@@ -2446,6 +2714,39 @@ MIT License - See LICENSE file for details
 - ✅ Default to 30 days (720 hours) for broader coverage
 - ✅ Explicit KQL queries with visible timestamps
 - ✅ Authentication test at startup
+
+### Compliance Framework Integration
+- ✅ **Added**: Framework profile selection (OWASP, STIG, CIS, MITRE)
+- ✅ Profile-aware table filtering
+- ✅ Rulepack integration per framework
+- ✅ Framework-specific detection patterns
+- ✅ Compliance-aligned findings with control mappings
+
+### Time Estimation & Confirmation
+- ✅ **Added**: Universal time estimation for all models
+- ✅ Model-specific performance profiles
+- ✅ Chunking-aware time calculations
+- ✅ Pre-analysis confirmation screen
+- ✅ Cost transparency (FREE for local models)
+- ✅ Processing details preview (chunking, parallel processing)
+
+### Result View Modes
+- ✅ **Added**: Flexible result filtering options
+- ✅ Strict mode (all findings per severity)
+- ✅ Critical-only mode (high-confidence subset)
+- ✅ Critical + Strict mode (two separate sets)
+
+### Enhanced Schema & Validation
+- ✅ **Added**: Pydantic schema validation (SCHEMAS.py)
+- ✅ Evidence-bound finding extensions
+- ✅ MITRE mapping schema structure
+- ✅ Finding structure validation
+
+### Killchain & Pattern Recognition
+- ✅ **Added**: Retrieval Memory system for killchain exemplars
+- ✅ Known pattern recognition (e.g., RDP password spray)
+- ✅ Sigma adapter for rule hints
+- ✅ Evidence-focused guidance
 
 ---
 

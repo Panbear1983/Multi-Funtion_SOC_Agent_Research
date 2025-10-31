@@ -12,6 +12,7 @@ Key Features:
 from color_support import Fore, Style
 import tiktoken
 import GUARDRAILS
+import TIME_ESTIMATOR
 
 # ═══════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -100,14 +101,22 @@ def log_guardrails_violation(model_name, table_name, reason):
 # INITIAL MODEL SELECTION (Original MODEL_SELECTOR functionality)
 # ═══════════════════════════════════════════════════════════════════════
 
-def prompt_model_selection():
+def prompt_model_selection(input_tokens=None):
     """
-    Interactive numbered menu for model selection
+    Interactive numbered menu for model selection with time estimates
     Emphasizes offline/free models for cost-conscious users
+    
+    Args:
+        input_tokens (int): Estimated input tokens for time calculation
     """
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
     print(f"{Fore.LIGHTCYAN_EX}SELECT LANGUAGE MODEL")
-    print(f"{Fore.LIGHTCYAN_EX}{'='*70}\n")
+    print(f"{Fore.LIGHTCYAN_EX}{'='*70}")
+    
+    if input_tokens:
+        print(f"{Fore.WHITE}Input size: {input_tokens:,} tokens{Fore.RESET}\n")
+    else:
+        print()
     
     model_list = []
     
@@ -126,6 +135,12 @@ def prompt_model_selection():
         default_marker = " ⭐ Recommended" if model_name == "gpt-5-mini" else ""
         print(f"{Fore.LIGHTGREEN_EX}[{idx}] {model_name}{default_marker}{Fore.RESET}")
         print(f"{Fore.WHITE}    Cost: {cost} | Context: {tokens}")
+        
+        # Add time estimate if input_tokens provided
+        if input_tokens:
+            estimated_time = TIME_ESTIMATOR.estimate_time(model_name, input_tokens)
+            time_display = TIME_ESTIMATOR.format_time_display(estimated_time, input_tokens, model_name)
+            print(f"{Fore.LIGHTBLUE_EX}    Est. time: {time_display}{Fore.RESET}")
     
     # ═══ OFFLINE MODELS (Ollama/Local) ═══
     print(f"\n{Fore.LIGHTYELLOW_EX}═══ Ollama Models (Local/Offline) - FREE ═══{Fore.RESET}\n")
@@ -146,6 +161,13 @@ def prompt_model_selection():
         model_list.append(model_name)
         print(f"{Fore.LIGHTYELLOW_EX}[{idx}] {model_name}{Fore.RESET}")
         print(f"{Fore.LIGHTGREEN_EX}    {cost} ✓{Fore.RESET} | {tokens} | Local/Offline")
+        
+        # Add time estimate if input_tokens provided
+        if input_tokens:
+            estimated_time = TIME_ESTIMATOR.estimate_time(model_name, input_tokens)
+            time_display = TIME_ESTIMATOR.format_time_display(estimated_time, input_tokens, model_name)
+            print(f"{Fore.LIGHTBLUE_EX}    Est. time: {time_display}{Fore.RESET}")
+        
         if description:
             print(f"{Fore.LIGHTBLACK_EX}    {description}{Fore.RESET}")
     
@@ -187,6 +209,13 @@ def prompt_model_selection():
     print(f"\n{color}✓ Selected: {selected_model}{Fore.RESET}")
     print(f"{Fore.WHITE}Type: {model_type}")
     print(f"{Fore.WHITE}Cost: {cost_msg}")
+    
+    # Add time estimate if input_tokens provided
+    if input_tokens:
+        estimated_time = TIME_ESTIMATOR.estimate_time(selected_model, input_tokens)
+        time_display = TIME_ESTIMATOR.format_time_display(estimated_time, input_tokens, selected_model)
+        print(f"{Fore.WHITE}Est. time: {time_display}")
+    
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}\n")
     
     return selected_model

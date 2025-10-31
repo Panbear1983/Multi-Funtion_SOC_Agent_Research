@@ -155,23 +155,26 @@ RULES:
             
             # Get response from model
             try:
-                print(f"{Fore.YELLOW}🤔 {self.model_name} is thinking... (this may take 30-60 seconds){Fore.RESET}")
-                response = OLLAMA_CLIENT.chat(
-                    messages=messages,
-                    model_name=self.model_name,
-                    json_mode=False,  # Free-form conversation
-                    timeout=120
-                )
-                print(f"\033[A\033[K", end='')  # Clear the "thinking" line
-                
+                print(f"{Fore.YELLOW}🤔 {self.model_name} is thinking... (streaming){Fore.RESET}")
+                accum = ""
+                try:
+                    for line in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
+                        text = line if isinstance(line, str) else ""
+                        accum += text
+                        print(text, end="", flush=True)
+                    print()
+                except KeyboardInterrupt:
+                    print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+                response = accum
+
                 # Add to history
                 self.conversation_history.append({
                     "role": "assistant",
                     "content": response
                 })
                 
-                # Display response
-                print(f"{Fore.LIGHTCYAN_EX}Assistant: {Fore.WHITE}{response}{Fore.RESET}\n")
+                # Display response (already streamed, but print newline separation)
+                print(f"\n{Fore.LIGHTCYAN_EX}Assistant (complete):{Fore.RESET}\n")
                 
                 self.turn_count += 1
                 

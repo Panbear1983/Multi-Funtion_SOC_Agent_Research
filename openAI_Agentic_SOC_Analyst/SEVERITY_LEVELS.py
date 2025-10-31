@@ -11,9 +11,9 @@ SEVERITY_TIERS = {
         'name': 'CRITICAL (Maximum Alert)',
         'description': 'Extreme sensitivity. Reports everything including anomalies. Use during confirmed breaches or red team exercises.',
         'confidence_threshold': 0,  # Report ALL findings (including anomalies)
-        'pattern_multiplier': 3.0,  # TRIPLE all pattern weights (was 2.0)
-        'max_log_lines': 200,  # Maximum logs (was 150)
-        'require_human_review': 3,  # Very low threshold (was 5)
+        'pattern_multiplier': 4.0,  # QUADRUPLE all pattern weights for maximum sensitivity
+        'max_log_lines': 300,  # Increased maximum logs for comprehensive analysis
+        'require_human_review': 2,  # Very low threshold for immediate review
         'mitre_tactics_priority': [
             'Initial Access', 'Execution', 'Persistence', 
             'Privilege Escalation', 'Defense Evasion',
@@ -24,9 +24,28 @@ SEVERITY_TIERS = {
         'min_iocs_to_flag': 1,  # Flag with just 1 IOC
         'include_anomalies': True,  # Include statistical anomalies
         'zero_tolerance': True,  # No filtering - report everything
-        'enable_behavioral_analysis': True  # Enable behavioral detection
+        'enable_behavioral_analysis': True,  # Enable behavioral detection
+        'enhanced_patterns': True,  # Use enhanced pattern matching
+        'cross_correlation': True,  # Enable cross-log correlation
+        'temporal_analysis': True,  # Enable time-based analysis
+        'ioc_boost': 2.0  # Boost IOC detection sensitivity
     },
     
+    'high_signal': {
+        'name': 'HIGH-SIGNAL (Critical Only)',
+        'description': 'High-confidence threats only; minimal noise and small result sets.',
+        'confidence_threshold': 8,
+        'pattern_multiplier': 1.8,
+        'max_log_lines': 80,
+        'require_human_review': 7,
+        'alert_style': Fore.MAGENTA,
+        'min_iocs_to_flag': 1,
+        'include_anomalies': False,
+        'enable_behavioral_analysis': True,
+        'cross_correlation': False,
+        'temporal_analysis': False
+    },
+
     'strict': {
         'name': 'STRICT (High Security)',
         'description': 'Maximum sensitivity. Flags everything suspicious. Use during active incidents.',
@@ -78,7 +97,7 @@ SEVERITY_TIERS = {
 }
 
 # Default severity
-DEFAULT_SEVERITY = 'normal'
+DEFAULT_SEVERITY = 'strict'
 
 
 def get_severity_config(severity_level=None):
@@ -96,40 +115,24 @@ def get_severity_config(severity_level=None):
 
 
 def prompt_severity_selection():
-    """Interactive prompt for user to select severity level"""
+    """Interactive prompt for user to select severity level (3 options)"""
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
     print(f"{Fore.LIGHTCYAN_EX}SELECT INVESTIGATION SEVERITY LEVEL")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}")
-    
     print(f"\n{Fore.RED}[1] CRITICAL - Maximum Alert Mode ⚠️")
-    print(f"{Fore.WHITE}    • EXTREME sensitivity, reports EVERYTHING including anomalies")
-    print(f"{Fore.WHITE}    • Use during: Confirmed breaches, forensic investigation, red team")
-    print(f"{Fore.WHITE}    • Expect: Maximum alerts, significant false positives")
-    print(f"{Fore.WHITE}    • Settings: 2x pattern boost, 150 log lines, zero filtering")
-    
-    print(f"\n{Fore.LIGHTRED_EX}[2] STRICT - High Security Mode")
-    print(f"{Fore.WHITE}    • Maximum sensitivity, flags everything suspicious")
-    print(f"{Fore.WHITE}    • Use during: Active incidents, breach investigation")
-    print(f"{Fore.WHITE}    • Expect: High alert volume, more false positives")
-    
-    print(f"\n{Fore.LIGHTYELLOW_EX}[3] NORMAL - Balanced Mode (Default)")
-    print(f"{Fore.WHITE}    • Standard detection, good balance")
-    print(f"{Fore.WHITE}    • Use during: Daily operations, threat hunting")
-    print(f"{Fore.WHITE}    • Expect: Moderate alerts, some false positives")
-    
-    print(f"\n{Fore.LIGHTGREEN_EX}[4] RELAXED - Low Noise Mode")
-    print(f"{Fore.WHITE}    • High-confidence only, minimal false positives")
-    print(f"{Fore.WHITE}    • Use during: Routine monitoring, report generation")
-    print(f"{Fore.WHITE}    • Expect: Few alerts, high accuracy")
-    
+    print(f"{Fore.WHITE}    • Extreme sensitivity; includes anomalies; incident use")
+    print(f"\n{Fore.LIGHTRED_EX}[2] STRICT - High Security Mode (Default)")
+    print(f"{Fore.WHITE}    • High sensitivity; daily use; balanced cost")
+    print(f"\n{Fore.MAGENTA}[3] HIGH-SIGNAL - Critical Only")
+    print(f"{Fore.WHITE}    • High-confidence only; small result sets for fast inference")
     print(f"\n{Fore.LIGHTCYAN_EX}{'─'*70}")
     
     while True:
         try:
-            choice = input(f"{Fore.LIGHTGREEN_EX}Select mode [1-4] or press Enter for Normal: {Fore.RESET}").strip()
+            choice = input(f"{Fore.LIGHTGREEN_EX}Select mode [1-3] (default: 2 Strict): {Fore.RESET}").strip()
             
             if not choice:
-                severity = 'normal'
+                severity = 'strict'
                 break
             
             choice_num = int(choice)
@@ -140,15 +143,12 @@ def prompt_severity_selection():
                 severity = 'strict'
                 break
             elif choice_num == 3:
-                severity = 'normal'
-                break
-            elif choice_num == 4:
-                severity = 'relaxed'
+                severity = 'high_signal'
                 break
             else:
-                print(f"{Fore.RED}Please enter 1, 2, 3, or 4.{Fore.RESET}")
+                print(f"{Fore.RED}Please enter 1, 2, or 3.{Fore.RESET}")
         except ValueError:
-            print(f"{Fore.RED}Invalid input. Enter 1, 2, 3, or 4.{Fore.RESET}")
+            print(f"{Fore.RED}Invalid input. Enter 1, 2, or 3.{Fore.RESET}")
     
     config = SEVERITY_TIERS[severity]
     print(f"\n{config['alert_style']}✓ Selected: {config['name']}{Fore.RESET}")

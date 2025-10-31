@@ -10,6 +10,7 @@ from azure.monitor.query import LogsQueryClient
 # Local modules
 import _keys
 import SEVERITY_LEVELS
+import COMPLIANCE_PROFILES
 import MODEL_SELECTOR
 import THREAT_HUNT_PIPELINE
 import ANOMALY_DETECTION_PIPELINE
@@ -107,8 +108,26 @@ if pipeline_choice == '4' or not pipeline_choice:
 # MODEL & SEVERITY SELECTION (Common to Both Pipelines)
 # ═══════════════════════════════════════════════════════════════════
 
-# Select model
-model = MODEL_SELECTOR.prompt_model_selection()
+# Estimate input tokens for time calculation (if we have query context)
+input_tokens = None
+try:
+    import TIME_ESTIMATOR
+    table_for_estimate = 'DeviceProcessEvents'
+    if pipeline_choice == '1':
+        qc = locals().get('query_context')
+        if qc:
+            table_for_estimate = qc.get('table_name', 'DeviceProcessEvents')
+    # Create sample messages to estimate token count
+    sample_messages = [
+        {"role": "system", "content": "You are a security analyst."},
+        {"role": "user", "content": f"Analyze these logs: {table_for_estimate}"}
+    ]
+    input_tokens = TIME_ESTIMATOR.estimate_tokens(sample_messages, "gpt-4")
+except:
+    pass  # Fallback to no time estimation
+
+# Select model with time estimation
+model = MODEL_SELECTOR.prompt_model_selection(input_tokens)
 
 # Select severity level
 severity_level = SEVERITY_LEVELS.prompt_severity_selection()
@@ -116,6 +135,24 @@ severity_config = SEVERITY_LEVELS.get_severity_config(severity_level)
 
 # Display selected configuration
 SEVERITY_LEVELS.display_severity_banner(severity_level)
+
+# Select framework profile and merge into severity config
+profile_key = COMPLIANCE_PROFILES.prompt_profile_selection()
+severity_config = COMPLIANCE_PROFILES.apply_profile(severity_config, profile_key)
+
+# Select result view mode (affects post-processing, not scanning)
+print(f"{Fore.LIGHTCYAN_EX}Result View Mode:{Fore.RESET}")
+print(f"{Fore.WHITE}  [1] Strict (default){Fore.RESET}")
+print(f"{Fore.WHITE}  [2] Only Critical (High-Signal subset){Fore.RESET}")
+print(f"{Fore.WHITE}  [3] Critical + Strict (two sets){Fore.RESET}")
+try:
+    result_view_choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-3] (default: 1): {Fore.RESET}").strip()
+    if result_view_choice not in ['1','2','3']:
+        result_view_choice = '1'
+except (KeyboardInterrupt, EOFError):
+    result_view_choice = '1'
+
+# Removed early confirmation; confirmation will occur post-query, pre-inference
 
 # ═══════════════════════════════════════════════════════════════════
 # MODE-SPECIFIC CONFIGURATION (Only for Mode 1: Threat Hunting)
@@ -153,6 +190,20 @@ if pipeline_choice == '1':
         investigation_context = ""
     
     # ═══════════════════════════════════════════════════════════════════
+    # OPTIONAL GUIDANCE TOGGLES (flag-gated exemplar/evidence requirements)
+    # ═══════════════════════════════════════════════════════════════════
+    guidance_on = False
+    known_killchain = ""
+    try:
+        ans = input(f"{Fore.LIGHTGREEN_EX}Enable guidance (tiny exemplar + evidence requirements)? [y/N]: {Fore.RESET}").strip().lower()
+        guidance_on = ans in ['y', 'yes']
+        if guidance_on:
+            known_killchain = input(f"{Fore.LIGHTGREEN_EX}Known killchain (optional, e.g., rdp_password_spray): {Fore.RESET}").strip()
+    except (KeyboardInterrupt, EOFError):
+        guidance_on = False
+        known_killchain = ""
+    
+    # ═══════════════════════════════════════════════════════════════════
     # QUERY METHOD SELECTION (LLM vs Manual)
     # ═══════════════════════════════════════════════════════════════════
     
@@ -167,13 +218,9 @@ if pipeline_choice == '1':
     print(f"{Fore.LIGHTBLACK_EX}    • Uses investigation context")
     print(f"{Fore.LIGHTBLACK_EX}    • Best for: Complex queries, natural language input\n")
     
-    print(f"{Fore.LIGHTYELLOW_EX}[2] 📋 Structured Input (Manual)")
-    print(f"{Fore.LIGHTBLACK_EX}    Select table and filters step-by-step")
-    print(f"{Fore.LIGHTBLACK_EX}    • More control, predictable")
-    print(f"{Fore.LIGHTBLACK_EX}    • No extra LLM cost for query planning")
-    print(f"{Fore.LIGHTBLACK_EX}    • Best for: Simple targeted queries\n")
+    # Removed option 2 (Structured Input) to keep modes simple: LLM or Custom KQL only
     
-    print(f"{Fore.LIGHTMAGENTA_EX}[3] 💻 Custom KQL (Expert Mode)")
+    print(f"{Fore.LIGHTMAGENTA_EX}[2] 💻 Custom KQL (Expert Mode)")
     print(f"{Fore.LIGHTBLACK_EX}    Write your own KQL query, LLM filters results")
     print(f"{Fore.LIGHTBLACK_EX}    Example: 'DeviceProcessEvents | where ProcessCommandLine contains \"malware\"'")
     print(f"{Fore.LIGHTBLACK_EX}    • Full KQL control")
@@ -181,25 +228,24 @@ if pipeline_choice == '1':
     print(f"{Fore.LIGHTBLACK_EX}    • Best for: Advanced users with KQL knowledge\n")
     
     try:
-        query_method = input(f"{Fore.LIGHTGREEN_EX}Select query method [1-3]: {Fore.RESET}").strip()
+        query_method = input(f"{Fore.LIGHTGREEN_EX}Select query method [1 or 2]: {Fore.RESET}").strip()
         
-        if query_method not in ['1', '2', '3']:
+        if query_method not in ['1', '2']:
             print(f"{Fore.YELLOW}Invalid selection. Defaulting to Natural Language (1).{Fore.RESET}")
             query_method = '1'
         
         use_llm_query = (query_method == '1')
-        use_custom_kql = (query_method == '3')
+        use_custom_kql = (query_method == '2')
         
         if use_llm_query:
             print(f"{Fore.LIGHTGREEN_EX}✓ Using LLM-assisted query building{Fore.RESET}\n")
         elif use_custom_kql:
             print(f"{Fore.LIGHTMAGENTA_EX}✓ Using custom KQL expert mode{Fore.RESET}\n")
-        else:
-            print(f"{Fore.LIGHTGREEN_EX}✓ Using structured manual input{Fore.RESET}\n")
+        # Structured manual input removed
             
     except (KeyboardInterrupt, EOFError):
-        print(f"\n{Fore.YELLOW}Defaulting to manual mode...{Fore.RESET}")
-        use_llm_query = False
+        print(f"\n{Fore.YELLOW}Defaulting to Natural Language (LLM-Assisted)...{Fore.RESET}")
+        use_llm_query = True
 
 else:
     # For Mode 2 (Anomaly) and Mode 3 (CTF): No context or query method needed
@@ -285,8 +331,28 @@ if pipeline_choice == '1':
         end_date=end_date,
         investigation_context=investigation_context,  # Pass investigation context
         use_llm_query=use_llm_query,  # Pass query method flag
-        use_custom_kql=use_custom_kql  # Pass custom KQL flag
+        use_custom_kql=use_custom_kql,  # Pass custom KQL flag
+        guidance_on=guidance_on,
+        known_killchain=known_killchain
     )
+
+    # Post-process results per Result View Mode
+    try:
+        if hunt_results and 'findings' in hunt_results:
+            findings = hunt_results.get('findings', [])
+            critical_only = [f for f in findings if f.get('confidence','Medium') == 'High']
+            if result_view_choice == '2':
+                hunt_results['findings'] = critical_only
+                print(f"{Fore.LIGHTCYAN_EX}View Mode: Only Critical — {len(critical_only)} finding(s){Fore.RESET}")
+            elif result_view_choice == '3':
+                # Keep both sets for display or downstream
+                hunt_results['critical_findings'] = critical_only
+                hunt_results['strict_findings'] = findings
+                print(f"{Fore.LIGHTCYAN_EX}View Mode: Critical + Strict — Critical: {len(critical_only)}, Strict: {len(findings)}{Fore.RESET}")
+            else:
+                print(f"{Fore.LIGHTCYAN_EX}View Mode: Strict — {len(findings)} finding(s){Fore.RESET}")
+    except Exception:
+        pass
 
 elif pipeline_choice == '2':
     # ═══ ANOMALY DETECTION PIPELINE ═══

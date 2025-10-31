@@ -64,3 +64,42 @@ def chat(messages, model_name, host=None, json_mode=True, temperature=0, timeout
 	return message.get("content", "")
 
 
+def chat_stream(messages, model_name, host=None, json_mode=True, temperature=0):
+	"""Stream responses from Ollama, yielding raw JSON lines or text chunks.
+
+	Callers are responsible for buffering and parsing. This function intentionally
+	avoids imposing a schema because Ollama may stream different shapes depending
+	on model/runtime (chat vs generate endpoints).
+	"""
+
+	if host is None:
+		host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+	url = f"{host}/api/chat"
+
+	payload = {
+		"model": model_name,
+		"messages": messages,
+		"stream": True,
+		"options": {
+			"temperature": temperature,
+			"num_ctx": 8192,
+			"num_predict": 2048
+		}
+	}
+
+	if json_mode:
+		payload["format"] = "json"
+
+	with requests.post(url, json=payload, stream=True, timeout=None) as resp:
+		resp.raise_for_status()
+		for line in resp.iter_lines():
+			if not line:
+				continue
+			try:
+				yield line.decode("utf-8")
+			except Exception:
+				# Fallback to raw bytes if decoding fails
+				yield line
+
+

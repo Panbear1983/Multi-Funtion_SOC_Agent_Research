@@ -13,6 +13,8 @@ ALLOWED_TABLES = {
     "AzureNetworkAnalytics_CL": { "TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "DestPort_d", "VM_s", "AllowedInFlows_d", "AllowedOutFlows_d", "DeniedInFlows_d", "DeniedOutFlows_d" },
     "AzureActivity": {"TimeGenerated", "OperationNameValue", "ActivityStatusValue", "ResourceGroup", "Caller", "CallerIpAddress", "Category" },
     "SigninLogs": {"TimeGenerated", "UserPrincipalName", "OperationName", "Category", "ResultSignature", "ResultDescription", "AppDisplayName", "IPAddress", "LocationDetails" },
+    "AuditLogs": {"TimeGenerated", "OperationName", "ResultDescription", "ResultType", "Category", "InitiatedBy", "TargetResources", "CorrelationId", "AADTenantId"},
+    "AzureNetworkAnalyticsIPDetails_CL": {"TimeGenerated", "IPAddress_s", "ThreatType_s", "ThreatCategory_s", "ASN_s", "Country_s", "Region_s"},
 }
 
 ALLOWED_MODELS = {
@@ -33,13 +35,19 @@ def validate_tables_and_fields(table, fields):
     print(f"{Fore.LIGHTBLACK_EX}[DEBUG] Allowed fields for this table: {ALLOWED_TABLES.get(table, 'TABLE NOT FOUND')}{Fore.RESET}")
     
     if table not in ALLOWED_TABLES:
-        print(f"{Fore.RED}{Style.BRIGHT}ERROR:{Style.RESET_ALL} "f"Table '{table}' is not in allowed list — {Fore.RED}{Style.BRIGHT}exiting.{Style.RESET_ALL}")
-        exit(1)
+        print(f"{Fore.RED}{Style.BRIGHT}ERROR:{Style.RESET_ALL} "f"Table '{table}' is not in allowed list.")
+        raise ValueError(f"Disallowed table: {table}")
     
-    fields = fields.replace(' ','').split(',')
+    # Normalize fields to a list
+    if isinstance(fields, str):
+        fields = fields.replace(' ', '').split(',') if fields else []
+    elif isinstance(fields, (list, tuple, set)):
+        fields = list(fields)
+    else:
+        raise TypeError("fields must be a string or a sequence of field names")
 
     for field in fields:
-        if field not in ALLOWED_TABLES[table]:
+        if ALLOWED_TABLES[table] and (field not in ALLOWED_TABLES[table]):
             print(f"\n{Fore.RED}{Style.BRIGHT}=" * 70)
             print(f"ERROR: FIELD VALIDATION FAILED")
             print(f"=" * 70)
@@ -48,8 +56,7 @@ def validate_tables_and_fields(table, fields):
             print(f"\n{Fore.YELLOW}Available fields for {table}:{Fore.RESET}")
             for allowed_field in sorted(ALLOWED_TABLES[table]):
                 print(f"  ✓ {allowed_field}")
-            print(f"\n{Fore.RED}{Style.BRIGHT}Exiting...{Style.RESET_ALL}\n")
-            exit(1)
+            raise ValueError(f"Disallowed field '{field}' for table '{table}'")
     
     print(f"{Fore.WHITE}Fields and tables have been validated and comply with the allowed guidelines.\n")
 

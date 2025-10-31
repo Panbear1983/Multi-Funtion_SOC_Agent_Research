@@ -1,0 +1,6 @@
+TimeGenerated,DeviceName,AccountName,ProcessCommandLine,ProcessPath
+2025-10-29T10:15:23Z,DESKTOP-001,admin,powershell.exe -enc SQBuAHYAbwBrAGUALQB3AGUAYgByAGUAcQB1AGUAcwB0,C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+2025-10-29T10:16:45Z,DESKTOP-001,admin,cmd.exe /c whoami /all,C:\Windows\System32\cmd.exe
+2025-10-29T10:17:12Z,DESKTOP-001,admin,net user /domain,C:\Windows\System32\net.exe
+2025-10-29T10:18:33Z,DESKTOP-001,admin,reg query HKLM\SAM,C:\Windows\System32\reg.exe
+2025-10-29T10:19:45Z,DESKTOP-001,admin,schtasks /create /tn "Update" /tr "powershell.exe -enc",C:\Windows\System32\schtasks.exe

@@ -1,6 +1,10 @@
 """
 CTF Hunt Mode V3 - Human-Driven with LLM Advisory
 Major redesign: Human writes KQL, LLM provides guidance
+
+Canonical implementation: This module is the single active CTF Hunt Mode.
+Legacy variants have been archived under `archive/` and are no longer
+imported or maintained.
 """
 
 import json

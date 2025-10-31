@@ -440,13 +440,21 @@ The data has already been filtered for statistical outliers and baseline deviati
                 log_data=filtered_records.to_csv(index=False)
             )
             
+            # Prepare investigation context for hybrid model
+            investigation_context = {
+                'mode': 'anomaly',
+                'query_method': 'structured',
+                'table_name': table_name
+            }
+            
             hunt_results = EXECUTOR.hunt(
                 openai_client=self.openai_client,
                 threat_hunt_system_message=PROMPT_MANAGEMENT.SYSTEM_PROMPT_THREAT_HUNT,
                 threat_hunt_user_message=threat_hunt_user_message,
                 openai_model=self.model,
                 severity_config=self.severity_config,
-                table_name=table_name  # Pass table name for smart model selection
+                table_name=table_name,  # Pass table name for smart model selection
+                investigation_context=investigation_context
             )
             
             if hunt_results and hunt_results.get('findings'):

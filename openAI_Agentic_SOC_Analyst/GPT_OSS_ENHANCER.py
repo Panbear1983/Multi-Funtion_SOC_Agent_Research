@@ -395,6 +395,43 @@ class GptOssEnhancer:
         return list(set(iocs))[:8]  # Increased to 8 to include device/account
 
 
+    def _parse_structured_fields_from_csv_line(self, line, csv_col_indices=None):
+        """Extract device/account/ip from CSV line using common column names."""
+        device_name = None
+        account_name = None
+        remote_ip = None
+
+        parts = line.split(',') if isinstance(line, str) else []
+
+        if csv_col_indices:
+            for col_name in ['DeviceName', 'VM_s', 'Computer']:
+                if col_name in csv_col_indices:
+                    idx = csv_col_indices[col_name]
+                    if idx < len(parts):
+                        value = parts[idx].strip()
+                        if value:
+                            device_name = value
+                            break
+            for col_name in ['AccountName', 'Caller', 'UserPrincipalName']:
+                if col_name in csv_col_indices:
+                    idx = csv_col_indices[col_name]
+                    if idx < len(parts):
+                        value = parts[idx].strip()
+                        if value:
+                            account_name = value
+                            break
+            for col_name in ['RemoteIP', 'SrcPublicIPs_s', 'DestIP_s', 'IPAddress', 'CallerIpAddress']:
+                if col_name in csv_col_indices:
+                    idx = csv_col_indices[col_name]
+                    if idx < len(parts):
+                        ip_val = parts[idx].strip()
+                        if re.match(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', ip_val):
+                            remote_ip = ip_val
+                            break
+
+        return device_name, account_name, remote_ip
+
+
     def _detect_impossible_travel(self, log_lines):
         """Detect impossible travel patterns in authentication logs"""
         findings = []
@@ -536,9 +573,13 @@ class GptOssEnhancer:
             'DeviceLogonEvents': ['logontype', 'accountname', 'remoteip'],
             'DeviceFileEvents': ['filename', 'folderpath', 'sha256'],
             'DeviceRegistryEvents': ['registrykey', 'registryvaluename'],
+            'AlertInfo': ['alertid', 'title', 'severity', 'status'],
+            'AlertEvidence': ['alertid', 'evidencetype', 'evidencevalue'],
             'SigninLogs': ['userprincipalname', 'appdisplayname'],
+            'AuditLogs': ['operationname', 'category', 'result', 'initiatedby'],
             'AzureActivity': ['operationnamevalue', 'caller'],
-            'AzureNetworkAnalytics_CL': ['flowtype_s', 'srcpublicips_s']
+            'AzureNetworkAnalytics_CL': ['flowtype_s', 'srcpublicips_s'],
+            'AzureNetworkAnalyticsIPDetails_CL': ['publicipaddress_s', 'publicipdetails_s', 'organization_s']
         }
         
         # Find best match
@@ -675,24 +716,48 @@ class GptOssEnhancer:
         # Build compact prompt
         compact_messages = self._build_compact_prompt(messages, rule_findings, iocs, log_data)
         
-        # Get LLM analysis with extended timeout
-        print(f"{Fore.LIGHTGREEN_EX}Analyzing with {model_name} (this may take several minutes)...")
+        # Get LLM analysis with streaming; salvage partial on cancel/error
+        print(f"{Fore.LIGHTGREEN_EX}Analyzing with {model_name} (streaming)...")
+        buffer = ""
+        llm_findings = []
         try:
-            llm_content = OLLAMA_CLIENT.chat(messages=compact_messages, model_name=model_name, timeout=600)  # 10 minutes
+            for chunk in OLLAMA_CLIENT.chat_stream(messages=compact_messages, model_name=model_name):
+                try:
+                    obj = json.loads(chunk)
+                    msg = (obj.get("message") or {}).get("content", "") or obj.get("response", "")
+                    if msg:
+                        buffer += msg
+                except Exception:
+                    buffer += chunk if isinstance(chunk, str) else ""
+        except KeyboardInterrupt:
+            print(f"{Fore.YELLOW}Cancelled by user. Returning partial results if possible.{Fore.RESET}")
         except Exception as e:
             print(f"{Fore.YELLOW}⚠️  LLM analysis timed out or failed: {e}")
-            print(f"{Fore.WHITE}Falling back to rule-based findings only...")
-            llm_content = None
-        
-        if llm_content:
+            print(f"{Fore.WHITE}Falling back to rule-based findings + partial text if any...")
+
+        if buffer.strip():
             try:
-                llm_results = json.loads(llm_content)
+                llm_results = json.loads(buffer)
                 llm_findings = llm_results.get("findings", [])
             except json.JSONDecodeError:
-                print(f"{Fore.YELLOW}LLM returned invalid JSON, using rule-based findings only")
-                llm_findings = []
-        else:
-            llm_findings = []
+                # Salvage partial content: extract entities and attach
+                partial_text = buffer[-4000:]
+                devices = re.findall(r'(?:DeviceName|Computer)\s*[:=]\s*([A-Za-z0-9._-]{2,})', partial_text)
+                accounts = re.findall(r'(?:AccountName|User|UPN|UserPrincipalName)\s*[:=]\s*([A-Za-z0-9._@-]{3,})', partial_text)
+                finding = {
+                    "title": "Partial LLM Analysis (incomplete)",
+                    "description": "LLM response was interrupted. Partial text captured.",
+                    "confidence": "Low",
+                    "log_lines": [],
+                    "indicators_of_compromise": [],
+                    "tags": ["partial", "llm-analysis"],
+                    "notes": partial_text
+                }
+                if devices:
+                    finding["device_name"] = devices[0]
+                if accounts:
+                    finding["account_name"] = accounts[0]
+                llm_findings = [finding]
         
         # Combine findings (prioritize rule-based for GPT-OSS)
         combined_findings = rule_findings + llm_findings
@@ -707,6 +772,27 @@ class GptOssEnhancer:
         print(f"{Fore.WHITE}Enhanced analysis complete: {len(final_findings)} findings")
         
         return {"findings": final_findings}
+
+    def apply_rule_based_patterns_to_csv(self, csv_text):
+        """Apply rule-based patterns to CSV text and return findings and IOCs"""
+        try:
+            # Detect table name from CSV content
+            table_name = self._detect_table_from_csv(csv_text)
+            
+            # Analyze logs with rules
+            rule_findings = self.analyze_logs_with_rules(csv_text, table_name)
+            
+            # Extract IOCs from findings
+            iocs = []
+            for finding in rule_findings:
+                if 'ioc' in finding and finding['ioc']:
+                    iocs.append(finding['ioc'])
+            
+            return rule_findings, iocs
+            
+        except Exception as e:
+            print(f"{Fore.YELLOW}Rule-based pattern analysis error: {e}{Fore.RESET}")
+            return [], []
 
     def _build_compact_prompt(self, messages, rule_findings, iocs, log_data):
         """Build extremely token-efficient prompt for 32K limit"""

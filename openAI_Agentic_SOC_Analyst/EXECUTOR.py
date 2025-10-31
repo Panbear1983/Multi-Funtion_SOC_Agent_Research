@@ -12,6 +12,7 @@ import GPT_OSS_ENHANCER
 
 # Local modules
 import PROMPT_MANAGEMENT
+import TIME_ESTIMATOR
 
 def select_optimal_local_model(messages, table_name=None, severity_config=None):
     """
@@ -60,7 +61,122 @@ def select_optimal_local_model(messages, table_name=None, severity_config=None):
         # Default fallback
         return "qwen"
 
-def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, openai_model, severity_config=None, table_name=None):
+def _should_chunk_messages(model_name, messages):
+    """Check if messages need chunking based on model limits"""
+    try:
+        input_tokens = TIME_ESTIMATOR.estimate_tokens(messages, "gpt-4")
+        model_limit = TIME_ESTIMATOR.get_model_context_limit(model_name)
+        
+        # Use 80% of limit as threshold for safety
+        threshold = int(model_limit * 0.8)
+        
+        return input_tokens > threshold, input_tokens, threshold
+    except:
+        return False, 0, 0
+
+def _chunk_and_process_local_model(enhancer, messages, model_name, max_lines, chunk_size_tokens):
+    """Chunk messages and process with local model"""
+    from color_support import Fore
+    
+    # Extract CSV data
+    csv_data = ""
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            content = msg.get("content", "")
+            if "Log Data:" in content:
+                csv_start = content.find("Log Data:") + len("Log Data:")
+                csv_data = content[csv_start:].strip()
+                break
+            elif "Analyze these logs:" in content:
+                csv_start = content.find("Analyze these logs:") + len("Analyze these logs:")
+                csv_data = content[csv_start:].strip()
+                break
+    
+    if not csv_data:
+        print(f"{Fore.YELLOW}No CSV data found for chunking{Fore.RESET}")
+        return enhancer.enhanced_hunt(messages, model_name=model_name, max_lines=max_lines)
+    
+    # Split CSV into chunks
+    lines = csv_data.split('\n')
+    if len(lines) < 2:
+        return enhancer.enhanced_hunt(messages, model_name=model_name, max_lines=max_lines)
+    
+    header = lines[0]
+    data_lines = lines[1:]
+    
+    chunks = []
+    current_chunk = [header]
+    current_tokens = TIME_ESTIMATOR.estimate_tokens([header], "gpt-4")
+    
+    for line in data_lines:
+        if not line.strip():
+            continue
+        
+        line_tokens = TIME_ESTIMATOR.estimate_tokens([line], "gpt-4")
+        
+        if current_tokens + line_tokens > chunk_size_tokens and len(current_chunk) > 1:
+            chunks.append('\n'.join(current_chunk))
+            current_chunk = [header, line]
+            current_tokens = TIME_ESTIMATOR.estimate_tokens([header, line], "gpt-4")
+        else:
+            current_chunk.append(line)
+            current_tokens += line_tokens
+    
+    if len(current_chunk) > 1:
+        chunks.append('\n'.join(current_chunk))
+    
+    print(f"{Fore.LIGHTCYAN_EX}Processing {len(chunks)} chunks with {model_name}...{Fore.RESET}")
+    
+    all_results = []
+    
+    for i, chunk in enumerate(chunks):
+        print(f"{Fore.WHITE}Processing chunk {i+1}/{len(chunks)}...{Fore.RESET}")
+
+        try:
+            # Create chunk-specific messages
+            chunk_messages = []
+            for msg in messages:
+                if isinstance(msg, dict) and msg.get("role") == "user" and ("Log Data:" in msg.get("content", "") or "Analyze these logs:" in msg.get("content", "")):
+                    content = msg.get("content", "")
+                    if "Log Data:" in content:
+                        new_content = content.split("Log Data:")[0] + f"Log Data:\n{chunk}"
+                    else:
+                        new_content = content.split("Analyze these logs:")[0] + f"Analyze these logs:\n{chunk}"
+                    chunk_messages.append({"role": "user", "content": new_content})
+                elif isinstance(msg, dict) and msg.get("role") == "system":
+                    chunk_messages.append(msg)
+
+            # Process chunk
+            chunk_results = enhancer.enhanced_hunt(chunk_messages, model_name=model_name, max_lines=max_lines)
+            if isinstance(chunk_results, dict) and 'findings' in chunk_results:
+                current_findings = chunk_results['findings']
+                all_results.extend(current_findings)
+            elif isinstance(chunk_results, list):
+                current_findings = chunk_results
+                all_results.extend(current_findings)
+            else:
+                current_findings = []
+
+            # Persist after each chunk to allow recovery on cancel
+            try:
+                with open("_partial_results.jsonl", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"chunk": i+1, "findings": current_findings}, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
+            print(f"{Fore.LIGHTGREEN_EX}  ✓ Chunk {i+1} complete: {len(current_findings)} findings{Fore.RESET}")
+        except KeyboardInterrupt:
+            print(f"{Fore.YELLOW}Interrupted. Returning {len(all_results)} findings completed so far.{Fore.RESET}")
+            return {"findings": all_results}
+        except Exception as e:
+            print(f"{Fore.YELLOW}Chunk {i+1} failed: {e}. Continuing...{Fore.RESET}")
+            continue
+    
+    print(f"{Fore.LIGHTGREEN_EX}✓ All chunks processed: {len(all_results)} total findings{Fore.RESET}")
+    
+    return {"findings": all_results}
+
+def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, openai_model, severity_config=None, table_name=None, investigation_context=None):
     """
     Runs the threat hunting flow:
     1. Formats the logs into a string
@@ -69,7 +185,7 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
     4. Parses and returns a raw array
     Handles rate-limit/token overage errors gracefully.
     
-    NEW: Supports 'local-mix' for intelligent model selection
+    NEW: Supports 'local-mix' for TRUE HYBRID MODEL (Qwen + GPT-OSS)
     """
 
     results = []
@@ -80,15 +196,39 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
     ]
 
     try:
-        # NEW: Handle local-mix model with smart routing
+        # NEW: Handle local-mix with TRUE HYBRID MODEL
         if openai_model == "local-mix":
-            actual_model = select_optimal_local_model(
+            print(f"{Fore.LIGHTCYAN_EX}🔀 Using TRUE HYBRID MODEL (Qwen + GPT-OSS - Fully Offline){Fore.RESET}")
+            
+            # Import hybrid engine
+            import HYBRID_ENGINE
+            
+            # Determine investigation mode from context
+            investigation_mode = investigation_context.get('mode', 'threat_hunt') if investigation_context else 'threat_hunt'
+            query_method = investigation_context.get('query_method', 'llm') if investigation_context else 'llm'
+            
+            # Initialize hybrid engine with dynamic configuration
+            hybrid_engine = HYBRID_ENGINE.HybridEngine(
+                investigation_mode=investigation_mode,
+                severity_config=severity_config,
+                query_method=query_method,
+                openai_client=openai_client
+            )
+            
+            # Run hybrid analysis
+            results = hybrid_engine.analyze(
                 messages=messages,
                 table_name=table_name,
-                severity_config=severity_config
+                context=investigation_context
             )
-            print(f"{Fore.LIGHTCYAN_EX}Local Mix: Auto-selected {Fore.LIGHTYELLOW_EX}{actual_model}{Fore.LIGHTCYAN_EX} for this task{Fore.RESET}")
-            openai_model = actual_model  # Route to actual model
+            try:
+                import UTILITIES
+                enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
+                results["findings"] = enriched
+                results["entity_summary"] = summary
+            except Exception:
+                pass
+            return results
         
         # Check if this is an Ollama model (local)
         if openai_model == "qwen":
@@ -96,6 +236,13 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
             # Use enhanced pipeline for Qwen models with severity config
             severity_mult = severity_config['pattern_multiplier'] if severity_config else 1.0
             max_lines = severity_config['max_log_lines'] if severity_config else 50
+            
+            # Check if chunking is needed
+            should_chunk, input_tokens, threshold = _should_chunk_messages("qwen3:8b", messages)
+            
+            if should_chunk:
+                print(f"{Fore.LIGHTCYAN_EX}Large dataset detected ({input_tokens:,} tokens) - Using chunked processing{Fore.RESET}")
+                print(f"{Fore.LIGHTBLACK_EX}Model limit: {TIME_ESTIMATOR.get_model_context_limit('qwen3:8b'):,} | Threshold: {threshold:,}{Fore.RESET}")
             
             # Initialize enhancer with GUARDRAILS awareness and optional GPT refinement
             enhancer = QWEN_ENHANCER.QwenEnhancer(
@@ -116,14 +263,34 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
             if enhancer.use_gpt_refinement:
                 print(f"{Fore.LIGHTYELLOW_EX}  ✓ GPT-4o refinement enabled (hybrid mode){Fore.RESET}")
             
-            results = enhancer.enhanced_hunt(messages, model_name="qwen3:8b", max_lines=max_lines)
+            if should_chunk:
+                # Use chunked processing
+                chunk_size = int(TIME_ESTIMATOR.get_model_context_limit("qwen3:8b") * 0.8)
+                results = _chunk_and_process_local_model(enhancer, messages, "qwen3:8b", max_lines, chunk_size)
+            else:
+                # Normal processing
+                results = enhancer.enhanced_hunt(messages, model_name="qwen3:8b", max_lines=max_lines)
+            try:
+                import UTILITIES
+                enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
+                results["findings"] = enriched
+                results["entity_summary"] = summary
+            except Exception:
+                pass
             return results
             
         elif openai_model == "gpt-oss:20b":
             print(f"{Fore.LIGHTCYAN_EX}Using Ollama local model (GPT-OSS 20B) with GUARDRAILS enforcement...{Fore.RESET}")
-            # Use specialized GPT-OSS enhancer optimized for 8K token limit
+            # Use specialized GPT-OSS enhancer optimized for 32K token limit
             severity_mult = severity_config['pattern_multiplier'] if severity_config else 1.0
             max_lines = severity_config['max_log_lines'] if severity_config else 15  # GPT-OSS has 32K context but needs aggressive slicing
+            
+            # Check if chunking is needed
+            should_chunk, input_tokens, threshold = _should_chunk_messages("gpt-oss:20b", messages)
+            
+            if should_chunk:
+                print(f"{Fore.LIGHTCYAN_EX}Large dataset detected ({input_tokens:,} tokens) - Using chunked processing{Fore.RESET}")
+                print(f"{Fore.LIGHTBLACK_EX}Model limit: {TIME_ESTIMATOR.get_model_context_limit('gpt-oss:20b'):,} | Threshold: {threshold:,}{Fore.RESET}")
             
             # Initialize enhancer with GUARDRAILS awareness and optional GPT refinement
             enhancer = GPT_OSS_ENHANCER.GptOssEnhancer(
@@ -144,7 +311,20 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
             if enhancer.use_gpt_refinement:
                 print(f"{Fore.LIGHTYELLOW_EX}  ✓ GPT-4o refinement enabled (hybrid mode){Fore.RESET}")
             
-            results = enhancer.enhanced_hunt(messages, model_name="gpt-oss:20b", max_lines=max_lines)
+            if should_chunk:
+                # Use chunked processing
+                chunk_size = int(TIME_ESTIMATOR.get_model_context_limit("gpt-oss:20b") * 0.8)
+                results = _chunk_and_process_local_model(enhancer, messages, "gpt-oss:20b", max_lines, chunk_size)
+            else:
+                # Normal processing
+                results = enhancer.enhanced_hunt(messages, model_name="gpt-oss:20b", max_lines=max_lines)
+            try:
+                import UTILITIES
+                enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
+                results["findings"] = enriched
+                results["entity_summary"] = summary
+            except Exception:
+                pass
             return results
         else:
             # Use OpenAI API
@@ -188,9 +368,15 @@ def get_query_context(openai_client, user_message, model):
 
     system_message = PROMPT_MANAGEMENT.SYSTEM_PROMPT_TOOL_SELECTION
 
+    # Handle local-mix model - convert to actual model for query planning
+    if model == "local-mix":
+        # For query planning, we still need OpenAI function calling
+        # So route to gpt-4o-mini (cheap and fast)
+        print(f"{Fore.YELLOW}Note: Using gpt-4o-mini for query planning (local-mix uses hybrid model for analysis){Fore.RESET}")
+        query_model = "gpt-4o-mini"
     # If Ollama model selected, use a capable OpenAI model for tool selection
     # (Ollama doesn't support function calling well)
-    if model in {"qwen", "gpt-oss:20b"}:
+    elif model in {"qwen", "gpt-oss:20b"}:
         print(f"{Fore.YELLOW}Note: Using gpt-4o-mini for query planning (Local models don't support function calling){Fore.RESET}")
         query_model = "gpt-4o-mini"
     else:
