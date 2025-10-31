@@ -192,7 +192,6 @@ Comments: Good detection
 │  • _threats.jsonl          (Detected threats)                   │
 │  • _analysis_feedback.jsonl (User feedback for learning)        │
 │  • pattern_weights.json    (Learned pattern weights)            │
-│  • behavioral_baseline.json (Normal behavior patterns)          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -266,14 +265,7 @@ Comments: Good detection
 - Pattern performance tracking
 - Weights persist across sessions
 
-#### 7. **Behavioral Baseline** (`BEHAVIORAL_BASELINE.py`)
-- Learns normal user/device behavior
-- First-time device/IP detection
-- Unusual time-of-day alerts
-- New user identification
-- Behavioral anomaly scoring
-
-#### 8. **Feedback Manager** (`FEEDBACK_MANAGER.py`)
+#### 7. **Feedback Manager** (`FEEDBACK_MANAGER.py`)
 - Collects user ratings (1-5 scale)
 - Tracks analysis quality over time
 - Identifies improvement areas
@@ -282,25 +274,21 @@ Comments: Good detection
 
 ### Model Management
 
-#### 9. **Model Selector** (`MODEL_SELECTOR.py`)
+#### 8. **Model Selector** (`MODEL_SELECTOR.py`)
 - Interactive model selection menu
 - Displays cost and context window information
 - Supports both cloud (OpenAI) and local (Ollama) models
-- Default fallback to `gpt-5-mini`
-
-#### 10. **Model Management** (`MODEL_MANAGEMENT.py`)
 - Token counting and estimation
 - Automatic model selection based on context size
-- Cost optimization
-- Context window management
+- Default fallback to `local-mix`
 
-#### 11. **Ollama Client** (`OLLAMA_CLIENT.py`)
+#### 9. **Ollama Client** (`OLLAMA_CLIENT.py`)
 - Local model interface for offline operation
 - Privacy-preserving analysis
 - No API costs
 - 300-second timeout (handles large analyses)
 
-#### 12. **Model Enhancers**
+#### 10. **Model Enhancers**
 - **`QWEN_ENHANCER.py`**: Rule-based enhancement for Qwen models (128K context)
 - **`GPT_OSS_ENHANCER.py`**: Optimized enhancement for GPT-OSS (32K context)
 - 165+ threat pattern detection
@@ -309,19 +297,19 @@ Comments: Good detection
 
 ### Security & Configuration
 
-#### 13. **Guardrails** (`GUARDRAILS.py`)
+#### 11. **Guardrails** (`GUARDRAILS.py`)
 - Table and field validation
 - Model validation
 - Allowed tables and fields enforcement
 - Security controls to prevent unauthorized access
 
-#### 14. **Severity Levels** (`SEVERITY_LEVELS.py`)
+#### 12. **Severity Levels** (`SEVERITY_LEVELS.py`)
 - 3-tier severity system (Relaxed, Balanced, Strict)
 - Confidence-based filtering
 - Adjustable sensitivity
 - False positive reduction
 
-#### 15. **Prompt Management** (`PROMPT_MANAGEMENT.py`)
+#### 13. **Prompt Management** (`PROMPT_MANAGEMENT.py`)
 - Centralized system prompts
 - Context-aware prompt building
 - Tool selection prompts
@@ -329,62 +317,44 @@ Comments: Good detection
 
 ### Utilities
 
-#### 16. **Utilities** (`UTILITIES.py`)
+#### 14. **Utilities** (`UTILITIES.py`)
 - Query context sanitization
 - Threat display formatting
 - Data validation
 - Helper functions
 
-#### 17. **Chat Mode** (`CHAT_MODE.py`)
+#### 15. **Chat Mode** (`CHAT_MODE.py`)
 - Interactive discussion of findings
 - Local model conversation interface
 - Context-aware responses
 
-#### 18. **Local Query Parser** (`LOCAL_QUERY_PARSER.py`)
+#### 16. **Local Query Parser** (`LOCAL_QUERY_PARSER.py`)
 - Fallback query planning without API
 - Pattern-based KQL generation
 - Offline operation support
 
 ### Compliance & Framework Integration
 
-#### 19. **Compliance Profiles** (`COMPLIANCE_PROFILES.py`)
+#### 17. **Compliance Profiles** (`COMPLIANCE_PROFILES.py`)
 - Framework profile selection (OWASP, STIG, CIS, MITRE)
 - Table scope filtering per profile
-- Rulepack integration
 - Profile-aware severity configuration
-
-#### 20. **Insight Engine** (`INSIGHT_ENGINE.py`)
-- Framework-aware post-processing
-- MITRE ATT&CK mapping enrichment
-- Report generation sections
-- Control mapping
-
-#### 21. **Rulepack Engine** (`RULEPACK_ENGINE.py`)
-- Rulepack loading system
-- Profile-specific KQL constraints
-- Table scope filtering
-- Projection guidance
-
-#### 22. **Sigma Adapter** (`SIGMA_ADAPTER.py`)
-- Sigma rule hint integration
-- Pattern matching hints
-- Killchain-aware suggestions
 
 ### Analysis & Confirmation
 
-#### 23. **Confirmation Manager** (`CONFIRMATION_MANAGER.py`)
+#### 18. **Confirmation Manager** (`CONFIRMATION_MANAGER.py`)
 - Pre-commit confirmation with time estimates
 - Analysis parameters display
 - Cost information
 - Processing details preview
 
-#### 24. **Time Estimator** (`TIME_ESTIMATOR.py`)
+#### 19. **Time Estimator** (`TIME_ESTIMATOR.py`)
 - Universal time estimation for all models
 - OpenAI and Ollama model profiles
 - Chunked processing time calculation
 - Hybrid model time estimates
 
-#### 25. **Hybrid Engine** (`HYBRID_ENGINE.py`)
+#### 20. **Hybrid Engine** (`HYBRID_ENGINE.py`)
 - Dynamic hybrid model selection
 - Parallel processing (Qwen + GPT-OSS)
 - Intelligent result fusion
@@ -392,13 +362,13 @@ Comments: Good detection
 
 ### Memory & Validation
 
-#### 26. **Retrieval Memory** (`RETRIEVAL_MEMORY.py`)
+#### 21. **Retrieval Memory** (`RETRIEVAL_MEMORY.py`)
 - Killchain exemplar retrieval
 - Pattern matching hints
 - Evidence-focused guidance
 - Known attack pattern recognition
 
-#### 27. **Schemas** (`SCHEMAS.py`)
+#### 22. **Schemas** (`SCHEMAS.py`)
 - Pydantic schema validation
 - Finding structure validation
 - Evidence-bound extensions
@@ -2476,11 +2446,9 @@ openAI_Agentic_SOC_Analyst/
 │
 ├── CORRELATION_ENGINE.py         # Attack chain correlation
 ├── LEARNING_ENGINE.py            # Self-learning system
-├── BEHAVIORAL_BASELINE.py        # Behavioral analysis
 ├── FEEDBACK_MANAGER.py           # User feedback collection
 │
 ├── MODEL_SELECTOR.py             # Model selection UI
-├── MODEL_MANAGEMENT.py           # Token & cost management
 ├── OLLAMA_CLIENT.py              # Local model interface
 ├── QWEN_ENHANCER.py              # Qwen model enhancement
 ├── GPT_OSS_ENHANCER.py           # GPT-OSS enhancement
@@ -2496,16 +2464,12 @@ openAI_Agentic_SOC_Analyst/
 ├── CONFIRMATION_MANAGER.py       # Pre-analysis confirmation
 ├── TIME_ESTIMATOR.py             # Time estimation system
 ├── HYBRID_ENGINE.py              # Hybrid model engine
-├── INSIGHT_ENGINE.py              # Framework-aware insights
 ├── RETRIEVAL_MEMORY.py           # Killchain exemplar retrieval
-├── RULEPACK_ENGINE.py             # Rulepack loading
-├── SIGMA_ADAPTER.py               # Sigma rule hints
 ├── SCHEMAS.py                     # Schema validation
 │
 ├── _threats.jsonl                # Detected threats (output)
 ├── _analysis_feedback.jsonl      # User feedback (learning)
 ├── pattern_weights.json          # Learned weights
-├── behavioral_baseline.json      # Behavioral baselines
 │
 └── README.md                     # This file
 ```
