@@ -105,52 +105,56 @@ if pipeline_choice == '4' or not pipeline_choice:
     exit(0)
 
 # ═══════════════════════════════════════════════════════════════════
-# MODEL & SEVERITY SELECTION (Common to Both Pipelines)
+# MODEL & SEVERITY SELECTION (Skip for CTF mode - happens after intel capture)
 # ═══════════════════════════════════════════════════════════════════
 
-# Estimate input tokens for time calculation (if we have query context)
-input_tokens = None
-try:
-    import TIME_ESTIMATOR
-    table_for_estimate = 'DeviceProcessEvents'
-    if pipeline_choice == '1':
-        qc = locals().get('query_context')
-        if qc:
-            table_for_estimate = qc.get('table_name', 'DeviceProcessEvents')
-    # Create sample messages to estimate token count
-    sample_messages = [
-        {"role": "system", "content": "You are a security analyst."},
-        {"role": "user", "content": f"Analyze these logs: {table_for_estimate}"}
-    ]
-    input_tokens = TIME_ESTIMATOR.estimate_tokens(sample_messages, "gpt-4")
-except:
-    pass  # Fallback to no time estimation
+if pipeline_choice == '3':  # CTF mode - model selection happens after Stage 1 (Flag Intel Capture)
+    model = None  # Will be selected after Stage 1
+    severity_config = None  # Will be selected after Stage 1
+else:
+    # Estimate input tokens for time calculation (if we have query context)
+    input_tokens = None
+    try:
+        import TIME_ESTIMATOR
+        table_for_estimate = 'DeviceProcessEvents'
+        if pipeline_choice == '1':
+            qc = locals().get('query_context')
+            if qc:
+                table_for_estimate = qc.get('table_name', 'DeviceProcessEvents')
+        # Create sample messages to estimate token count
+        sample_messages = [
+            {"role": "system", "content": "You are a security analyst."},
+            {"role": "user", "content": f"Analyze these logs: {table_for_estimate}"}
+        ]
+        input_tokens = TIME_ESTIMATOR.estimate_tokens(sample_messages, "gpt-4")
+    except:
+        pass  # Fallback to no time estimation
 
-# Select model with time estimation
-model = MODEL_SELECTOR.prompt_model_selection(input_tokens)
+    # Select model with time estimation
+    model = MODEL_SELECTOR.prompt_model_selection(input_tokens)
 
-# Select severity level
-severity_level = SEVERITY_LEVELS.prompt_severity_selection()
-severity_config = SEVERITY_LEVELS.get_severity_config(severity_level)
+    # Select severity level
+    severity_level = SEVERITY_LEVELS.prompt_severity_selection()
+    severity_config = SEVERITY_LEVELS.get_severity_config(severity_level)
 
-# Display selected configuration
-SEVERITY_LEVELS.display_severity_banner(severity_level)
+    # Display selected configuration
+    SEVERITY_LEVELS.display_severity_banner(severity_level)
 
-# Select framework profile and merge into severity config
-profile_key = COMPLIANCE_PROFILES.prompt_profile_selection()
-severity_config = COMPLIANCE_PROFILES.apply_profile(severity_config, profile_key)
+    # Select framework profile and merge into severity config
+    profile_key = COMPLIANCE_PROFILES.prompt_profile_selection()
+    severity_config = COMPLIANCE_PROFILES.apply_profile(severity_config, profile_key)
 
-# Select result view mode (affects post-processing, not scanning)
-print(f"{Fore.LIGHTCYAN_EX}Result View Mode:{Fore.RESET}")
-print(f"{Fore.WHITE}  [1] Strict (default){Fore.RESET}")
-print(f"{Fore.WHITE}  [2] Only Critical (High-Signal subset){Fore.RESET}")
-print(f"{Fore.WHITE}  [3] Critical + Strict (two sets){Fore.RESET}")
-try:
-    result_view_choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-3] (default: 1): {Fore.RESET}").strip()
-    if result_view_choice not in ['1','2','3']:
+    # Select result view mode (affects post-processing, not scanning)
+    print(f"{Fore.LIGHTCYAN_EX}Result View Mode:{Fore.RESET}")
+    print(f"{Fore.WHITE}  [1] Strict (default){Fore.RESET}")
+    print(f"{Fore.WHITE}  [2] Only Critical (High-Signal subset){Fore.RESET}")
+    print(f"{Fore.WHITE}  [3] Critical + Strict (two sets){Fore.RESET}")
+    try:
+        result_view_choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-3] (default: 1): {Fore.RESET}").strip()
+        if result_view_choice not in ['1','2','3']:
+            result_view_choice = '1'
+    except (KeyboardInterrupt, EOFError):
         result_view_choice = '1'
-except (KeyboardInterrupt, EOFError):
-    result_view_choice = '1'
 
 # Removed early confirmation; confirmation will occur post-query, pre-inference
 
@@ -295,7 +299,7 @@ except Exception as e:
 
 try:
     # HARDCODED: ALWAYS 30 DAYS BACK (NO USER INPUT)
-    HARDCODED_DEFAULT_DAYS = 30
+    HARDCODED_DEFAULT_DAYS = 365
     
     start_date = datetime.now() - timedelta(days=HARDCODED_DEFAULT_DAYS)
     end_date = datetime.now()
@@ -372,61 +376,24 @@ elif pipeline_choice == '2':
 
 elif pipeline_choice == '3':
     # ═══ CTF HUNT MODE ═══
+    # CTF Mode uses Azure Sentinel / Log Analytics exclusively for longer data retention
     
-    # Data Source Selection
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
-    print(f"{Fore.LIGHTCYAN_EX}SELECT DATA SOURCE")
+    print(f"{Fore.LIGHTCYAN_EX}CTF HUNT MODE - Azure Sentinel")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}\n")
+    print(f"{Fore.LIGHTGREEN_EX}✓ Using Azure Sentinel / Log Analytics{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}  • Longer data retention than MDE{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}  • Multi-source correlation{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}  • Historical analysis support{Fore.RESET}\n")
     
-    print(f"{Fore.LIGHTGREEN_EX}[1]{Fore.RESET} {Fore.LIGHTCYAN_EX}Microsoft Defender for Endpoint (MDE){Fore.RESET} {Fore.LIGHTGREEN_EX}← Recommended{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • All tables available (DeviceRegistryEvents included!){Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • Real-time data (no ingestion delay){Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • Free (included in MDE license){Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • Best for CTF hunting{Fore.RESET}\n")
+    # CTF Mode always uses Log Analytics (Sentinel)
+    query_client = law_client
+    workspace_id = _keys.LOG_ANALYTICS_WORKSPACE_ID
     
-    print(f"{Fore.LIGHTYELLOW_EX}[2]{Fore.RESET} {Fore.WHITE}Azure Sentinel / Log Analytics{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • Configured tables only{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • Multi-source correlation{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}    • Long-term storage{Fore.RESET}\n")
-    
-    try:
-        data_source_choice = input(f"{Fore.LIGHTGREEN_EX}Select data source [1-2] (default: 1): {Fore.RESET}").strip()
-        if not data_source_choice or data_source_choice == '1':
-            data_source = 'MDE'
-            print(f"{Fore.LIGHTGREEN_EX}✓ Using MDE Advanced Hunting{Fore.RESET}\n")
-            
-            # Create MDE client
-            import MDE_CLIENT
-            try:
-                mde_client = MDE_CLIENT.create_mde_client(
-                    tenant_id=_keys.MDE_TENANT_ID,
-                    client_id=_keys.MDE_CLIENT_ID,
-                    client_secret=_keys.MDE_CLIENT_SECRET
-                )
-                print(f"{Fore.LIGHTGREEN_EX}✓ MDE client initialized{Fore.RESET}\n")
-                query_client = mde_client
-                workspace_id = None  # Not used for MDE
-            except Exception as e:
-                print(f"{Fore.RED}Failed to initialize MDE client: {e}{Fore.RESET}")
-                print(f"{Fore.YELLOW}Falling back to Azure Sentinel...{Fore.RESET}\n")
-                data_source = 'Sentinel'
-                query_client = law_client
-                workspace_id = _keys.LOG_ANALYTICS_WORKSPACE_ID
-        else:
-            data_source = 'Sentinel'
-            print(f"{Fore.LIGHTGREEN_EX}✓ Using Azure Sentinel{Fore.RESET}\n")
-            query_client = law_client
-            workspace_id = _keys.LOG_ANALYTICS_WORKSPACE_ID
-    except (KeyboardInterrupt, EOFError):
-        data_source = 'MDE'  # Default
-        import MDE_CLIENT
-        mde_client = MDE_CLIENT.create_mde_client(
-            tenant_id=_keys.MDE_TENANT_ID,
-            client_id=_keys.MDE_CLIENT_ID,
-            client_secret=_keys.MDE_CLIENT_SECRET
-        )
-        query_client = mde_client
-        workspace_id = None
+    # DEBUG: Verify client type
+    print(f"{Fore.LIGHTYELLOW_EX}🔍 DEBUG _main.py: query_client type = '{type(query_client).__name__}'{Fore.RESET}")
+    print(f"{Fore.LIGHTYELLOW_EX}🔍 DEBUG _main.py: Has query_workspace = {hasattr(query_client, 'query_workspace')}{Fore.RESET}")
+    print(f"{Fore.LIGHTYELLOW_EX}🔍 DEBUG _main.py: Has query_advanced_hunting = {hasattr(query_client, 'query_advanced_hunting')}{Fore.RESET}\n")
     
     hunt_results, report_file = CTF_HUNT_MODE.run_ctf_hunt(
         openai_client=openai_client,
@@ -436,8 +403,7 @@ elif pipeline_choice == '3':
         severity_config=severity_config,
         timerange_hours=timerange_hours,
         start_date=start_date,
-        end_date=end_date,
-        data_source=data_source
+        end_date=end_date
     )
 
 else:

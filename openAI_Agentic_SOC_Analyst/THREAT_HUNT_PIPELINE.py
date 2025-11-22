@@ -515,21 +515,21 @@ Look for patterns, encoded data, or anomalies that match the investigation hints
     input(f"Press {Fore.LIGHTGREEN_EX}[Enter]{Fore.WHITE} to see results.")
     UTILITIES.display_threats(threat_list=hunt_results['findings'])
     
-    # Offer chat mode for local models
-    if model in {"qwen", "gpt-oss:20b"}:
-        try:
-            chat_choice = input(f"\n{Fore.LIGHTGREEN_EX}💬 Discuss findings? [y/N]: {Fore.RESET}").strip().lower()
-            
-            if chat_choice in ['y', 'yes']:
-                log_summary = f"{number_of_records} records from {query_context['table_name']}"
-                CHAT_MODE.start_chat_mode(
-                    findings=hunt_results['findings'],
-                    log_data_summary=log_summary,
-                    query_context=query_context,
-                    model_name=model
-                )
-        except (KeyboardInterrupt, EOFError, ValueError):
-            pass
+    # Offer chat mode for all models
+    try:
+        chat_choice = input(f"\n{Fore.LIGHTGREEN_EX}💬 Discuss findings? [y/N]: {Fore.RESET}").strip().lower()
+        
+        if chat_choice in ['y', 'yes']:
+            log_summary = f"{number_of_records} records from {query_context['table_name']}"
+            CHAT_MODE.start_chat_mode(
+                findings=hunt_results['findings'],
+                log_data_summary=log_summary,
+                query_context=query_context,
+                model_name=model,
+                openai_client=openai_client
+            )
+    except (KeyboardInterrupt, EOFError, ValueError):
+        pass
     
     return hunt_results, query_context
 

@@ -221,6 +221,24 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
                 table_name=table_name,
                 context=investigation_context
             )
+            
+            # For CTF mode, extract CTF format from results
+            if investigation_context and investigation_context.get('mode') == 'ctf':
+                import RESPONSE_PARSER
+                # Check if results already in CTF format or need extraction from findings
+                if isinstance(results, dict) and "suggested_answer" in results:
+                    # Already CTF format
+                    return results
+                elif isinstance(results, dict) and "findings" in results:
+                    # Extract CTF data from findings format
+                    findings = results.get("findings", [])
+                    for finding in findings:
+                        if isinstance(finding, dict) and "_ctf_analysis" in finding:
+                            return finding["_ctf_analysis"]
+                    # If no _ctf_analysis, try to parse from findings structure
+                    return RESPONSE_PARSER.parse_response(json.dumps(results), "ctf")
+            
+            # Threat hunt mode - enrich findings
             try:
                 import UTILITIES
                 enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
@@ -268,8 +286,22 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
                 chunk_size = int(TIME_ESTIMATOR.get_model_context_limit("qwen3:8b") * 0.8)
                 results = _chunk_and_process_local_model(enhancer, messages, "qwen3:8b", max_lines, chunk_size)
             else:
-                # Normal processing
-                results = enhancer.enhanced_hunt(messages, model_name="qwen3:8b", max_lines=max_lines)
+                # Normal processing - pass investigation_context for CTF mode
+                results = enhancer.enhanced_hunt(messages, model_name="qwen3:8b", max_lines=max_lines, investigation_context=investigation_context)
+            
+            # For CTF mode, extract CTF format from results (enhancers return CTF format directly for CTF mode)
+            if investigation_context and investigation_context.get('mode') == 'ctf':
+                # QwenEnhancer returns CTF format directly when is_ctf_mode=True (see QWEN_ENHANCER.py line 1236-1240)
+                if isinstance(results, dict) and "suggested_answer" in results:
+                    return results  # Already CTF format
+                # If still in findings format, extract CTF data
+                elif isinstance(results, dict) and "findings" in results:
+                    findings = results.get("findings", [])
+                    for finding in findings:
+                        if isinstance(finding, dict) and "_ctf_analysis" in finding:
+                            return finding["_ctf_analysis"]
+            
+            # Threat hunt mode - enrich findings
             try:
                 import UTILITIES
                 enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
@@ -316,8 +348,22 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
                 chunk_size = int(TIME_ESTIMATOR.get_model_context_limit("gpt-oss:20b") * 0.8)
                 results = _chunk_and_process_local_model(enhancer, messages, "gpt-oss:20b", max_lines, chunk_size)
             else:
-                # Normal processing
-                results = enhancer.enhanced_hunt(messages, model_name="gpt-oss:20b", max_lines=max_lines)
+                # Normal processing - pass investigation_context for CTF mode
+                results = enhancer.enhanced_hunt(messages, model_name="gpt-oss:20b", max_lines=max_lines, investigation_context=investigation_context)
+            
+            # For CTF mode, extract CTF format from results (enhancers return CTF format directly for CTF mode)
+            if investigation_context and investigation_context.get('mode') == 'ctf':
+                # GptOssEnhancer returns CTF format directly when is_ctf_mode=True (see GPT_OSS_ENHANCER.py line 786-790)
+                if isinstance(results, dict) and "suggested_answer" in results:
+                    return results  # Already CTF format
+                # If still in findings format, extract CTF data
+                elif isinstance(results, dict) and "findings" in results:
+                    findings = results.get("findings", [])
+                    for finding in findings:
+                        if isinstance(finding, dict) and "_ctf_analysis" in finding:
+                            return finding["_ctf_analysis"]
+            
+            # Threat hunt mode - enrich findings
             try:
                 import UTILITIES
                 enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
@@ -336,6 +382,12 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
             )
 
             results = json.loads(response.choices[0].message.content)
+            
+            # Format-aware routing: Parse CTF format if mode is 'ctf'
+            if investigation_context and investigation_context.get('mode') == 'ctf':
+                import RESPONSE_PARSER
+                results = RESPONSE_PARSER.parse_response(response.choices[0].message.content, "ctf")
+            
             return results
 
     except RateLimitError as e:

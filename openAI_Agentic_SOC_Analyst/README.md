@@ -227,19 +227,28 @@ Comments: Good detection
 
 #### 1. **Main Entry Point** (`_main.py`)
 - System orchestrator and user interface
-- Pipeline selection (Threat Hunting vs Anomaly Detection)
+- Pipeline selection (Threat Hunting vs Anomaly Detection vs CTF Mode)
 - Model and severity level configuration
+- Investigation context and guidance support
+- Query method selection (Natural Language vs Custom KQL)
+- Result view mode configuration
 - Session management and results display
 
 #### 2. **Execution Layer** (`EXECUTOR.py`)
 - **Query Planning**: Uses LLM to generate KQL queries from natural language
 - **Log Analytics Querying**: Executes KQL against Azure Log Analytics
-- **Threat Hunting**: Analyzes logs using selected LLM
+- **Threat Hunting**: Analyzes logs using selected LLM or hybrid models
+- **Hybrid Model Support**: Integrated support for `local-mix` (Qwen + GPT-OSS parallel processing)
+- **Intelligent Model Selection**: Table-based routing (volume vs reasoning-heavy tables)
+- **Chunked Processing**: Automatic chunking for large datasets
 - **Error Handling**: Rate limit and token management
 
 #### 3. **Threat Hunt Pipeline** (`THREAT_HUNT_PIPELINE.py`)
 - User-directed targeted investigation
 - Hypothesis-driven threat hunting
+- Investigation context support (IOCs, hints, techniques)
+- Guidance/killchain exemplar integration
+- Query method selection (Natural Language LLM-assisted vs Custom KQL)
 - Single-table focused analysis
 - Interactive chat mode for local models
 - Best for: Incident response, alert triage
@@ -280,7 +289,10 @@ Comments: Good detection
 - Supports both cloud (OpenAI) and local (Ollama) models
 - Token counting and estimation
 - Automatic model selection based on context size
-- Default fallback to `local-mix`
+- Default fallback to `local-mix` (hybrid local models)
+- **Offline Guardrails**: Defense-in-depth security controls for local models
+- Runtime token validation and limit checking
+- Cost estimation and model switching
 
 #### 9. **Ollama Client** (`OLLAMA_CLIENT.py`)
 - Local model interface for offline operation
@@ -302,6 +314,7 @@ Comments: Good detection
 - Model validation
 - Allowed tables and fields enforcement
 - Security controls to prevent unauthorized access
+- **Offline Model Guardrails**: Additional security layer for local models
 
 #### 12. **Severity Levels** (`SEVERITY_LEVELS.py`)
 - 3-tier severity system (Relaxed, Balanced, Strict)
@@ -314,6 +327,7 @@ Comments: Good detection
 - Context-aware prompt building
 - Tool selection prompts
 - Function calling definitions
+- **CTF-specific formatting**: Specialized prompts for CTF flag extraction
 
 ### Utilities
 
@@ -333,42 +347,55 @@ Comments: Good detection
 - Pattern-based KQL generation
 - Offline operation support
 
+### Response Processing
+
+#### 17. **Response Parser** (`RESPONSE_PARSER.py`)
+- **Unified response parsing** for different output formats
+- Threat Hunt format: `{"findings": [...]}`
+- CTF format: `{"suggested_answer": "...", "confidence": "...", ...}`
+- Fallback parsing for partial/invalid JSON
+- Pattern extraction from text when JSON parsing fails
+
 ### Compliance & Framework Integration
 
-#### 17. **Compliance Profiles** (`COMPLIANCE_PROFILES.py`)
+#### 18. **Compliance Profiles** (`COMPLIANCE_PROFILES.py`)
 - Framework profile selection (OWASP, STIG, CIS, MITRE)
 - Table scope filtering per profile
 - Profile-aware severity configuration
 
 ### Analysis & Confirmation
 
-#### 18. **Confirmation Manager** (`CONFIRMATION_MANAGER.py`)
+#### 19. **Confirmation Manager** (`CONFIRMATION_MANAGER.py`)
 - Pre-commit confirmation with time estimates
 - Analysis parameters display
 - Cost information
 - Processing details preview
 
-#### 19. **Time Estimator** (`TIME_ESTIMATOR.py`)
+#### 20. **Time Estimator** (`TIME_ESTIMATOR.py`)
 - Universal time estimation for all models
 - OpenAI and Ollama model profiles
 - Chunked processing time calculation
 - Hybrid model time estimates
 
-#### 20. **Hybrid Engine** (`HYBRID_ENGINE.py`)
-- Dynamic hybrid model selection
-- Parallel processing (Qwen + GPT-OSS)
-- Intelligent result fusion
-- Context-aware model routing
+#### 21. **Hybrid Engine** (`HYBRID_ENGINE.py`)
+- **Dynamic hybrid model selection** based on investigation context
+- **Parallel processing** (Qwen + GPT-OSS simultaneously)
+- **Intelligent result fusion** with adaptive strategies
+- **Context-aware model routing** (volume vs reasoning-heavy tables)
+- **Adaptive configuration** per investigation mode and severity level
+- **Chunked processing** for large datasets
+- Supports all investigation modes (threat_hunt, anomaly, ctf)
+- Supports all query methods (llm, structured, custom_kql)
 
 ### Memory & Validation
 
-#### 21. **Retrieval Memory** (`RETRIEVAL_MEMORY.py`)
+#### 22. **Retrieval Memory** (`RETRIEVAL_MEMORY.py`)
 - Killchain exemplar retrieval
 - Pattern matching hints
 - Evidence-focused guidance
 - Known attack pattern recognition
 
-#### 22. **Schemas** (`SCHEMAS.py`)
+#### 23. **Schemas** (`SCHEMAS.py`)
 - Pydantic schema validation
 - Finding structure validation
 - Evidence-bound extensions
@@ -387,20 +414,32 @@ Comments: Good detection
 - 👤 Deep dive on devices/users
 
 **Workflow:**
-1. Select target table from menu (DeviceLogonEvents, DeviceProcessEvents, etc.)
-2. Select model and severity level
-3. Select framework profile (optional)
-4. Select result view mode
-5. Set investigation timeframe (with auto-detected available data range)
-6. Specify filters:
-   - DeviceName (optional) - e.g., "DESKTOP-001"
-   - AccountName (optional) - e.g., "admin"
-7. Review confirmation with time estimate
-8. System builds and executes KQL query with explicit dates
-9. Analyzes results using selected LLM
-10. Displays findings with labeled IOCs (DeviceName:, AccountName:)
-11. Optional: Interactive chat mode for deeper analysis (local models)
-12. Collects feedback for learning
+1. Select investigation mode: Threat Hunting
+2. Select model (default: `local-mix` for hybrid processing)
+3. Select severity level (Relaxed/Balanced/Strict)
+4. Select framework profile (optional: OWASP, STIG, CIS, MITRE)
+5. Select result view mode (Strict/Critical-only/Critical+Strict)
+6. **Provide investigation context** (optional):
+   - Known IOCs (IPs, hashes, domains)
+   - Techniques to focus on (credential dumping, lateral movement)
+   - Time hints (attack occurred around 3PM)
+   - Suspicious users/devices
+7. **Enable guidance** (optional): Killchain exemplar and evidence requirements
+8. **Select query method**:
+   - **Natural Language (LLM-Assisted)**: Describe hunt in plain English
+   - **Custom KQL (Expert Mode)**: Write your own KQL query
+9. Set investigation timeframe (auto-set to 365 days, configurable)
+10. System builds and executes KQL query with explicit dates
+11. Analyzes results using selected LLM or hybrid models
+12. Displays findings with labeled IOCs (DeviceName:, AccountName:)
+13. Optional: Interactive chat mode for deeper analysis (local models)
+14. Collects feedback for learning
+
+**New Features:**
+- **Investigation Context**: Provide hints, IOCs, or context to guide analysis
+- **Guidance Mode**: Enable killchain exemplar retrieval for known attack patterns
+- **Query Method Selection**: Choose between LLM-assisted or expert KQL mode
+- **Hybrid Model Support**: `local-mix` automatically uses Qwen + GPT-OSS in parallel
 
 **Example Investigations:**
 - Table: DeviceLogonEvents → AccountName: admin → Last 48 hours
@@ -1990,12 +2029,16 @@ ollama list  # Verify it's available
 
 ### Local Mix Models (Intelligent Routing)
 
-The **Local Mix** feature automatically selects the optimal local model (GPT-OSS or Qwen) for each task.
+The **Local Mix** feature automatically selects the optimal local model (GPT-OSS or Qwen) for each task, or uses both in parallel for hybrid analysis.
 
 **How It Works:**
-- **GPT-OSS 20B** → Used for reasoning-heavy tables (DeviceProcessEvents, DeviceRegistryEvents)
-- **Qwen 8B** → Used for high-volume tables (DeviceNetworkEvents, SigninLogs)
-- **Token-based routing** → Falls back to token count if table not categorized
+- **Hybrid Mode (default)**: Uses both GPT-OSS 20B and Qwen 8B in parallel
+  - **GPT-OSS 20B** → Used for reasoning-heavy tables (DeviceProcessEvents, DeviceRegistryEvents)
+  - **Qwen 8B** → Used for high-volume tables (DeviceNetworkEvents, SigninLogs)
+  - **Parallel Processing** → Both models analyze simultaneously, results are fused
+- **Intelligent Routing**: Falls back to token count if table not categorized
+- **Adaptive Configuration**: Adjusts based on investigation mode and severity level
+- **Result Fusion**: Combines findings from both models with confidence weighting
 
 **Usage:**
 ```
@@ -2003,13 +2046,16 @@ Select model [1-7]: 5  # or just press Enter (default)
 
 ✓ Selected: local-mix
 Type: Smart Mix (GPT-OSS + Qwen) - Auto-selects best local model
+Mode: Hybrid (parallel processing)
 ```
 
 **Benefits:**
 - ✅ FREE - No API costs
 - ✅ Unlimited tokens
 - ✅ Intelligent - Auto-selects optimal model per task
+- ✅ Hybrid - Parallel processing for comprehensive analysis
 - ✅ Transparent - Shows which model was selected
+- ✅ Adaptive - Configures based on investigation context
 
 ### Model Comparison
 
@@ -2648,6 +2694,45 @@ MIT License - See LICENSE file for details
 
 ## 🆕 Recent Improvements
 
+### Response Parsing System
+- ✅ **Added**: Unified RESPONSE_PARSER module for different output formats
+- ✅ Threat Hunt format parsing (`{"findings": [...]}`)
+- ✅ CTF format parsing (`{"suggested_answer": "...", "confidence": "..."}`)
+- ✅ Fallback parsing for partial/invalid JSON responses
+- ✅ Pattern extraction from text when JSON parsing fails
+
+### Enhanced Hybrid Engine
+- ✅ **Enhanced**: Dynamic configuration based on investigation mode
+- ✅ **Enhanced**: Adaptive model selection per severity level
+- ✅ **Enhanced**: Query method awareness (llm, structured, custom_kql)
+- ✅ **Enhanced**: Parallel processing with intelligent result fusion
+- ✅ **Enhanced**: Chunked processing for large datasets
+- ✅ **Enhanced**: Context-aware model routing (volume vs reasoning tables)
+
+### Investigation Context & Guidance
+- ✅ **Added**: Investigation context input (IOCs, hints, techniques)
+- ✅ **Added**: Guidance mode with killchain exemplar retrieval
+- ✅ **Added**: Known killchain pattern matching
+- ✅ **Added**: Evidence requirements enforcement
+
+### Query Method Selection
+- ✅ **Added**: Natural Language (LLM-Assisted) query building
+- ✅ **Added**: Custom KQL (Expert Mode) for advanced users
+- ✅ **Removed**: Structured manual input (simplified to LLM or Custom KQL)
+- ✅ LLM picks table & filters automatically from natural language
+
+### Offline Model Security
+- ✅ **Added**: Offline Guardrails for local models (defense-in-depth)
+- ✅ **Added**: Violation logging for audit trail
+- ✅ **Added**: Strict mode enforcement for security controls
+- ✅ **Added**: Runtime validation for offline model operations
+
+### Model Selection Enhancements
+- ✅ **Updated**: Default model changed to `local-mix` (hybrid local models)
+- ✅ **Enhanced**: Runtime token validation and limit checking
+- ✅ **Enhanced**: Cost estimation with model switching recommendations
+- ✅ **Enhanced**: Offline model detection and routing
+
 ### Structured Query Input
 - ❌ **Removed**: Natural language prompt parsing (ambiguous)
 - ✅ **Added**: Direct table/filter selection (precise)
@@ -2673,9 +2758,8 @@ MIT License - See LICENSE file for details
 - ✅ Up to 10 findings with full context
 
 ### Improved Workflow
-- ✅ Timeframe set after severity (logical order)
+- ✅ Timeframe auto-set to 365 days (configurable)
 - ✅ Shows available data before asking for dates
-- ✅ Default to 30 days (720 hours) for broader coverage
 - ✅ Explicit KQL queries with visible timestamps
 - ✅ Authentication test at startup
 

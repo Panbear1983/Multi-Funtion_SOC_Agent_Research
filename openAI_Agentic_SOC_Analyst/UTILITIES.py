@@ -401,6 +401,7 @@ def display_threats(threat_list):
         # Calculate assessment stats
         confidence_counts = {'High': 0, 'Medium': 0, 'Low': 0}
         tables_touched = set()
+        mitre_tactics = set()
         for threat in threat_list:
             conf = str(threat.get('confidence', 'Unknown')).strip()
             if 'High' in conf:
@@ -412,15 +413,109 @@ def display_threats(threat_list):
             # Extract table name from tags or notes if available
             if '_table_name' in threat:
                 tables_touched.add(threat['_table_name'])
+            # Extract MITRE tactics for context
+            mitre = threat.get('mitre', {})
+            if mitre.get('tactic'):
+                mitre_tactics.add(mitre.get('tactic'))
         
-        # Summary assessment with stats
+        # Calculate additional context metrics
+        total_findings = len(threat_list)
+        public_ip_count = len([ip for ip in ioc_summary.get('ip', []) if not _is_private_ip(ip)])
+        
+        # Build comprehensive paragraph-style assessment
         print(f"\n{Fore.LIGHTCYAN_EX}ASSESSMENT:")
-        if len(threat_list) > 3:
-            print(f"{Fore.WHITE}This appears to be a coordinated attack campaign with multiple attack vectors.")
-        elif any('High' in str(t.get('confidence', '')) for t in threat_list):
-            print(f"{Fore.WHITE}High-confidence threats indicate active compromise requiring immediate response.")
+        
+        # Build assessment sentence components
+        assessment_sentences = []
+        
+        # Opening: Volume and campaign assessment
+        if total_findings > 5:
+            assessment_sentences.append(f"Analysis reveals {total_findings} distinct findings indicating a coordinated multi-vector attack campaign")
+        elif total_findings > 2:
+            assessment_sentences.append(f"Multiple related findings ({total_findings} total) suggest an organized attack sequence")
         else:
-            print(f"{Fore.WHITE}Suspicious activity detected that warrants further investigation and monitoring.")
+            assessment_sentences.append(f"Analysis identified {total_findings} suspicious finding{'s' if total_findings > 1 else ''}")
+        
+        # Confidence quality assessment
+        if confidence_counts['High'] >= 3:
+            assessment_sentences.append(f"with {confidence_counts['High']} high-confidence detections indicating strong evidence of compromise")
+        elif confidence_counts['High'] > 0:
+            assessment_sentences.append(f"including {confidence_counts['High']} high-confidence threat{'s' if confidence_counts['High'] > 1 else ''} requiring immediate attention")
+        elif confidence_counts['Medium'] > 0:
+            assessment_sentences.append(f"predominantly medium-confidence findings requiring verification")
+        else:
+            assessment_sentences.append(f"comprised of lower-confidence indicators needing further validation")
+        
+        # Entity scope assessment
+        entity_scope_parts = []
+        if len(target_devices) > 3:
+            entity_scope_parts.append(f"widespread device compromise ({len(target_devices)} devices)")
+        elif len(target_devices) > 1:
+            entity_scope_parts.append(f"multiple device compromise ({len(target_devices)} devices)")
+        elif len(target_devices) == 1:
+            entity_scope_parts.append("single device compromise")
+        
+        if len(usernames) > 3:
+            entity_scope_parts.append(f"large-scale account targeting ({len(usernames)} accounts)")
+        elif len(usernames) > 1:
+            entity_scope_parts.append(f"multiple account targeting ({len(usernames)} accounts)")
+        elif len(usernames) == 1:
+            entity_scope_parts.append("single account targeting")
+        
+        if privileged_accounts:
+            entity_scope_parts.append(f"privileged account focus ({len(privileged_accounts)} admin/privileged accounts)")
+        
+        if public_ip_count > 5:
+            entity_scope_parts.append(f"extensive external C2 infrastructure ({public_ip_count} public IPs)")
+        elif public_ip_count > 0:
+            entity_scope_parts.append(f"external C2 infrastructure ({public_ip_count} public IP{'s' if public_ip_count > 1 else ''})")
+        
+        if entity_scope_parts:
+            assessment_sentences.append(f"Observed scope includes {', '.join(entity_scope_parts)}")
+        
+        # Lateral movement assessment
+        if lateral_movement_indicators:
+            if len(lateral_movement_indicators) > 2:
+                assessment_sentences.append("Multiple lateral movement indicators detected, suggesting post-compromise expansion across the network")
+            else:
+                assessment_sentences.append("Lateral movement activity detected, indicating potential spread beyond initial entry point")
+        
+        # MITRE attack chain assessment
+        if len(mitre_tactics) >= 4:
+            tactics_list = sorted(list(mitre_tactics))[:4]
+            assessment_sentences.append(f"Attack progression spans {len(mitre_tactics)} MITRE tactics ({', '.join(tactics_list)}), indicating advancement through multiple killchain stages")
+        elif len(mitre_tactics) >= 2:
+            tactics_list = sorted(list(mitre_tactics))
+            assessment_sentences.append(f"Attack progression across {len(mitre_tactics)} MITRE tactics ({', '.join(tactics_list)}) suggests structured campaign")
+        
+        # Table coverage assessment
+        if len(tables_touched) >= 4:
+            tables_list = sorted(list(tables_touched))[:4]
+            assessment_sentences.append(f"Activity spans {len(tables_touched)} data sources ({', '.join(tables_list)}), indicating broad attack surface coverage")
+        elif len(tables_touched) >= 2:
+            tables_list = sorted(list(tables_touched))
+            assessment_sentences.append(f"Multi-source evidence from {len(tables_touched)} log sources ({', '.join(tables_list)}) reinforces threat validity")
+        
+        # Severity and urgency determination
+        if confidence_counts['High'] >= 3:
+            severity_level = "CRITICAL"
+            urgency = "immediate containment and investigation"
+        elif confidence_counts['High'] > 0 or total_findings > 5:
+            severity_level = "HIGH"
+            urgency = "prompt investigation and containment"
+        elif total_findings > 3 or lateral_movement_indicators:
+            severity_level = "MEDIUM-HIGH"
+            urgency = "thorough investigation recommended"
+        else:
+            severity_level = "MODERATE"
+            urgency = "investigation and monitoring"
+        
+        # Final severity statement
+        assessment_sentences.append(f"Overall severity assessment: {severity_level} - {urgency} required")
+        
+        # Combine all sentences into flowing paragraph
+        assessment_text = ". ".join(assessment_sentences) + "."
+        print(f"{Fore.WHITE}{assessment_text}")
         
         # Print stats
         stats_parts = [f"{len(threat_list)} findings"]

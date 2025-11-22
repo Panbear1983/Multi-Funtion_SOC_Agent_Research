@@ -150,7 +150,22 @@ class HybridEngine:
         qwen_results = self.model_adapters['qwen'].process(messages, table_name, context)
         gpt_oss_results = self.model_adapters['gpt_oss'].process(messages, table_name, context)
         
-        # Step 2: Intelligent fusion based on context
+        # Check if CTF mode - return CTF result directly
+        is_ctf_mode = context and context.get('mode') == 'ctf'
+        if is_ctf_mode:
+            # For CTF, prefer the result with higher confidence or non-empty answer
+            if isinstance(qwen_results, dict) and qwen_results.get("suggested_answer"):
+                if isinstance(gpt_oss_results, dict) and gpt_oss_results.get("suggested_answer"):
+                    # Both have answers - prefer higher confidence
+                    if gpt_oss_results.get("confidence", "Low") > qwen_results.get("confidence", "Low"):
+                        return gpt_oss_results
+                return qwen_results
+            elif isinstance(gpt_oss_results, dict) and gpt_oss_results.get("suggested_answer"):
+                return gpt_oss_results
+            # Fallback: return empty CTF result
+            return {"suggested_answer": "", "confidence": "Low", "explanation": "No answer found", "evidence_rows": [], "evidence_fields": [], "correlation": ""}
+        
+        # Step 2: Intelligent fusion based on context (threat hunt mode)
         fused_results = self.fusion_engine.fuse(
             qwen_results, gpt_oss_results, 
             investigation_mode=self.investigation_mode,
@@ -233,7 +248,22 @@ class HybridEngine:
         qwen_results = self.model_adapters['qwen'].process(messages, table_name, context)
         gpt_oss_results = self.model_adapters['gpt_oss'].process(messages, table_name, context)
         
-        # Step 2: Intelligent fusion based on context
+        # Check if CTF mode - return CTF result directly
+        is_ctf_mode = context and context.get('mode') == 'ctf'
+        if is_ctf_mode:
+            # For CTF, prefer the result with higher confidence or non-empty answer
+            if isinstance(qwen_results, dict) and qwen_results.get("suggested_answer"):
+                if isinstance(gpt_oss_results, dict) and gpt_oss_results.get("suggested_answer"):
+                    # Both have answers - prefer higher confidence
+                    if gpt_oss_results.get("confidence", "Low") > qwen_results.get("confidence", "Low"):
+                        return gpt_oss_results
+                return qwen_results
+            elif isinstance(gpt_oss_results, dict) and gpt_oss_results.get("suggested_answer"):
+                return gpt_oss_results
+            # Fallback: return empty CTF result
+            return {"suggested_answer": "", "confidence": "Low", "explanation": "No answer found", "evidence_rows": [], "evidence_fields": [], "correlation": ""}
+        
+        # Step 2: Intelligent fusion based on context (threat hunt mode)
         fused_results = self.fusion_engine.fuse(
             qwen_results, gpt_oss_results, 
             investigation_mode=self.investigation_mode,
@@ -451,10 +481,31 @@ class QwenModelAdapter:
             )
             
             try:
-                llm_results = json.loads(llm_content)
-                llm_findings = llm_results.get("findings", [])
+                # Check if CTF mode from context
+                is_ctf_mode = context and context.get('mode') == 'ctf'
+                
+                if is_ctf_mode:
+                    import RESPONSE_PARSER
+                    ctf_result = RESPONSE_PARSER.parse_response(llm_content, "ctf")
+                    # For hybrid mode, return CTF result as finding
+                    if ctf_result.get("suggested_answer"):
+                        llm_findings = [{
+                            "title": f"CTF Answer: {ctf_result.get('suggested_answer', 'N/A')}",
+                            "description": ctf_result.get("explanation", ""),
+                            "confidence": ctf_result.get("confidence", "Low"),
+                            "_ctf_analysis": ctf_result
+                        }]
+                    else:
+                        llm_findings = []
+                else:
+                    llm_results = json.loads(llm_content)
+                    llm_findings = llm_results.get("findings", [])
             except json.JSONDecodeError:
                 llm_findings = []
+            
+            # For CTF mode, return CTF result directly
+            if context and context.get('mode') == 'ctf' and llm_findings and llm_findings[0].get("_ctf_analysis"):
+                return llm_findings[0]["_ctf_analysis"]
             
             # Combine rule + LLM findings
             combined = self._combine_findings(rule_findings, llm_findings)
@@ -552,10 +603,31 @@ class GptOssModelAdapter:
             )
             
             try:
-                llm_results = json.loads(llm_content)
-                llm_findings = llm_results.get("findings", [])
+                # Check if CTF mode from context
+                is_ctf_mode = context and context.get('mode') == 'ctf'
+                
+                if is_ctf_mode:
+                    import RESPONSE_PARSER
+                    ctf_result = RESPONSE_PARSER.parse_response(llm_content, "ctf")
+                    # For hybrid mode, return CTF result as finding
+                    if ctf_result.get("suggested_answer"):
+                        llm_findings = [{
+                            "title": f"CTF Answer: {ctf_result.get('suggested_answer', 'N/A')}",
+                            "description": ctf_result.get("explanation", ""),
+                            "confidence": ctf_result.get("confidence", "Low"),
+                            "_ctf_analysis": ctf_result
+                        }]
+                    else:
+                        llm_findings = []
+                else:
+                    llm_results = json.loads(llm_content)
+                    llm_findings = llm_results.get("findings", [])
             except json.JSONDecodeError:
                 llm_findings = []
+            
+            # For CTF mode, return CTF result directly
+            if context and context.get('mode') == 'ctf' and llm_findings and llm_findings[0].get("_ctf_analysis"):
+                return llm_findings[0]["_ctf_analysis"]
             
             # Combine rule + LLM findings
             combined = self._combine_findings(rule_findings, llm_findings)

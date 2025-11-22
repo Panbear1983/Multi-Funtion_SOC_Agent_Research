@@ -8,13 +8,15 @@ import json
 import tiktoken
 from color_support import Fore, Style
 import OLLAMA_CLIENT
+import MODEL_SELECTOR
 
 class SocChatSession:
-    def __init__(self, findings, log_data_summary, query_context, model_name):
+    def __init__(self, findings, log_data_summary, query_context, model_name, openai_client=None):
         self.findings = findings
         self.log_data_summary = log_data_summary
         self.query_context = query_context
         self.model_name = model_name
+        self.openai_client = openai_client
         self.conversation_history = []
         
         # Safety limits
@@ -157,14 +159,44 @@ RULES:
             try:
                 print(f"{Fore.YELLOW}🤔 {self.model_name} is thinking... (streaming){Fore.RESET}")
                 accum = ""
-                try:
-                    for line in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
-                        text = line if isinstance(line, str) else ""
-                        accum += text
-                        print(text, end="", flush=True)
-                    print()
-                except KeyboardInterrupt:
-                    print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+                
+                # Check if model is OpenAI or Ollama
+                is_offline = MODEL_SELECTOR.is_offline_model(self.model_name)
+                
+                if is_offline:
+                    # Use Ollama for local models
+                    try:
+                        for line in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
+                            text = line if isinstance(line, str) else ""
+                            accum += text
+                            print(text, end="", flush=True)
+                        print()
+                    except KeyboardInterrupt:
+                        print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+                else:
+                    # Use OpenAI API for cloud models
+                    if not self.openai_client:
+                        print(f"{Fore.RED}Error: OpenAI client not available for model {self.model_name}{Fore.RESET}")
+                        raise Exception("OpenAI client required for cloud models")
+                    
+                    from openai import OpenAIError
+                    try:
+                        stream = self.openai_client.chat.completions.create(
+                            model=self.model_name,
+                            messages=messages,
+                            stream=True
+                        )
+                        for chunk in stream:
+                            if chunk.choices[0].delta.content:
+                                content = chunk.choices[0].delta.content
+                                accum += content
+                                print(content, end="", flush=True)
+                        print()
+                    except KeyboardInterrupt:
+                        print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+                    except OpenAIError as e:
+                        raise Exception(f"OpenAI API error: {e}")
+                
                 response = accum
 
                 # Add to history
@@ -238,8 +270,8 @@ RULES:
         return False
 
 
-def start_chat_mode(findings, log_data_summary, query_context, model_name):
+def start_chat_mode(findings, log_data_summary, query_context, model_name, openai_client=None):
     """Start conversational follow-up about findings"""
-    session = SocChatSession(findings, log_data_summary, query_context, model_name)
+    session = SocChatSession(findings, log_data_summary, query_context, model_name, openai_client)
     session.chat_loop()
 

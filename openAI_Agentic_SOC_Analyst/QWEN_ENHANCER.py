@@ -1059,9 +1059,12 @@ class QwenEnhancer:
         print(f"{Fore.LIGHTGREEN_EX}[QWEN_ENHANCER] ✓ Validated: {table_name} with {len(authorized_indices)} authorized fields{Fore.RESET}")
         return filtered_csv, True
 
-    def enhanced_hunt(self, messages, model_name="qwen3:8b", max_lines=50):
+    def enhanced_hunt(self, messages, model_name="qwen3:8b", max_lines=50, investigation_context=None):
         """Enhanced threat hunting combining rules and LLM analysis"""
         print(f"{Fore.LIGHTGREEN_EX}Starting enhanced Qwen threat hunt...")
+        
+        # Check if CTF mode
+        is_ctf_mode = investigation_context and investigation_context.get('mode') == 'ctf'
         
         # Extract log data and table name from messages
         log_data = ""
@@ -1190,8 +1193,29 @@ class QwenEnhancer:
 
         if buffer.strip():
             try:
-                llm_results = json.loads(buffer)
-                llm_findings = llm_results.get("findings", [])
+                # CTF mode: Use CTF parser
+                if is_ctf_mode:
+                    import RESPONSE_PARSER
+                    ctf_result = RESPONSE_PARSER.parse_response(buffer, "ctf")
+                    # Convert CTF format to findings format for compatibility
+                    llm_findings = []
+                    if ctf_result.get("suggested_answer"):
+                        llm_findings = [{
+                            "title": f"CTF Answer: {ctf_result.get('suggested_answer', 'N/A')}",
+                            "description": ctf_result.get("explanation", ""),
+                            "confidence": ctf_result.get("confidence", "Low"),
+                            "log_lines": [],
+                            "indicators_of_compromise": [ctf_result.get("suggested_answer", "")],
+                            "tags": ["ctf", "flag-answer"],
+                            "notes": f"Evidence rows: {ctf_result.get('evidence_rows', [])}, Fields: {ctf_result.get('evidence_fields', [])}",
+                            "_ctf_analysis": ctf_result  # Store full CTF result for later use
+                        }]
+                    else:
+                        llm_findings = []
+                else:
+                    # Default threat hunt format
+                    llm_results = json.loads(buffer)
+                    llm_findings = llm_results.get("findings", [])
             except json.JSONDecodeError:
                 # salvage partial by attaching as a narrative note and try extracting entities
                 partial_text = buffer[-4000:]
@@ -1209,7 +1233,13 @@ class QwenEnhancer:
                     **({"account_name": accounts[0]} if accounts else {})
                 }]
         
-        # Combine and deduplicate findings
+        # For CTF mode, return CTF format directly
+        if is_ctf_mode and llm_findings and llm_findings[0].get("_ctf_analysis"):
+            ctf_result = llm_findings[0]["_ctf_analysis"]
+            print(f"{Fore.WHITE}CTF analysis complete: Answer={ctf_result.get('suggested_answer', 'None')}, Confidence={ctf_result.get('confidence', 'Low')}")
+            return ctf_result
+        
+        # Combine and deduplicate findings (threat hunt mode)
         combined_findings = self._combine_findings(rule_findings, llm_findings)
         
         # Optionally refine with GPT-4/5 for better quality (hybrid mode)

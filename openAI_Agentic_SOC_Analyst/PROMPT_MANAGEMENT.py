@@ -30,6 +30,26 @@ If no findings: {"findings": []}
 logs below:
 """
 
+# CTF-specific formatting instructions for answer extraction
+CTF_FORMATTING_INSTRUCTIONS = """
+Return CTF analysis in this JSON format:
+{
+  "suggested_answer": "The flag answer value (exact format requested)",
+  "confidence": "High | Medium | Low",
+  "evidence_rows": [0, 1, 2],
+  "evidence_fields": ["RemoteIP", "AccountName", "ProcessCommandLine"],
+  "explanation": "Detailed explanation of why this is the answer, including decoding/parsing steps",
+  "correlation": "How this relates to previous flags (if applicable)"
+}
+
+IMPORTANT:
+- Extract the EXACT answer matching the flag format (e.g., IP address, filename, username)
+- Decode/parse complex fields (base64, hex, obfuscated PowerShell, encoded paths)
+- Provide specific row indexes where evidence appears
+- Explain your reasoning step-by-step
+- If no answer found: {"suggested_answer": "", "confidence": "Low", "explanation": "No matching answer found"}
+"""
+
 THREAT_HUNT_PROMPTS = {
 "GeneralThreatHunter": """
 Expert Threat Hunting AI for Microsoft Defender for Endpoint (MDE) data.

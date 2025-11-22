@@ -41,8 +41,27 @@ def money(usd):
 
 def is_offline_model(model_name):
     """Check if model is offline/local (Ollama)"""
+    if model_name is None:
+        return False
+    
+    # Check direct match first
     info = GUARDRAILS.ALLOWED_MODELS.get(model_name, {})
-    return info.get('cost_per_million_input', 0) == 0.00
+    if info and info.get('cost_per_million_input', 0) == 0.00:
+        return True
+    
+    # Check if it's an Ollama model name that maps to an allowed model
+    # (e.g., "qwen3:8b" maps to "qwen", "gpt-oss:20b" maps to itself)
+    ollama_to_allowed_mapping = {
+        "qwen3:8b": "qwen",
+        "gpt-oss:20b": "gpt-oss:20b"
+    }
+    
+    if model_name in ollama_to_allowed_mapping:
+        mapped_name = ollama_to_allowed_mapping[model_name]
+        info = GUARDRAILS.ALLOWED_MODELS.get(mapped_name, {})
+        return info.get('cost_per_million_input', 0) == 0.00
+    
+    return False
 
 def color_for_usage(used, limit):
     """Return color based on usage relative to limit"""
@@ -203,8 +222,17 @@ def prompt_model_selection(input_tokens=None):
     else:
         color = Fore.LIGHTGREEN_EX
         model_type = "OpenAI (Cloud/API)"
-        info = GUARDRAILS.ALLOWED_MODELS[selected_model]
-        cost_msg = f"${info['cost_per_million_input']:.2f}/${info['cost_per_million_output']:.2f} per M tokens"
+        # Map Ollama model names to ALLOWED_MODELS keys if needed
+        ollama_to_allowed_mapping = {
+            "qwen3:8b": "qwen",
+            "gpt-oss:20b": "gpt-oss:20b"
+        }
+        lookup_name = ollama_to_allowed_mapping.get(selected_model, selected_model)
+        info = GUARDRAILS.ALLOWED_MODELS.get(lookup_name, {})
+        if info:
+            cost_msg = f"${info['cost_per_million_input']:.2f}/${info['cost_per_million_output']:.2f} per M tokens"
+        else:
+            cost_msg = "Cost information unavailable"
     
     print(f"\n{color}✓ Selected: {selected_model}{Fore.RESET}")
     print(f"{Fore.WHITE}Type: {model_type}")
@@ -284,7 +312,24 @@ def assess_limits(model_name, input_tokens, tier):
     Check if model can handle the input size
     Validates both input token limit and TPM rate limits
     """
-    info = GUARDRAILS.ALLOWED_MODELS[model_name]
+    # Map Ollama model names to ALLOWED_MODELS keys if needed
+    ollama_to_allowed_mapping = {
+        "qwen3:8b": "qwen",
+        "gpt-oss:20b": "gpt-oss:20b"
+    }
+    
+    # Get the correct model name for ALLOWED_MODELS lookup
+    lookup_name = ollama_to_allowed_mapping.get(model_name, model_name)
+    
+    if lookup_name not in GUARDRAILS.ALLOWED_MODELS:
+        # Fallback: try direct lookup
+        lookup_name = model_name
+    
+    info = GUARDRAILS.ALLOWED_MODELS.get(lookup_name, {})
+    if not info:
+        # Model not found - return early with warning
+        print(f"{Fore.YELLOW}⚠️  Model '{model_name}' not found in ALLOWED_MODELS{Fore.RESET}")
+        return
     msgs = []
 
     # Input token limit check
@@ -334,8 +379,14 @@ def choose_model(model_name, input_tokens, tier=CURRENT_TIER, assumed_output_tok
     
     This is called AFTER data is loaded to validate the model can handle it
     """
-    # Validate model exists
-    if model_name not in GUARDRAILS.ALLOWED_MODELS:
+    # Validate model exists (check both direct and Ollama mappings)
+    ollama_to_allowed_mapping = {
+        "qwen3:8b": "qwen",
+        "gpt-oss:20b": "gpt-oss:20b"
+    }
+    lookup_name = ollama_to_allowed_mapping.get(model_name, model_name)
+    
+    if lookup_name not in GUARDRAILS.ALLOWED_MODELS and model_name not in GUARDRAILS.ALLOWED_MODELS:
         print(Fore.LIGHTRED_EX + f"Unknown model '{model_name}'. Defaulting to {DEFAULT_MODEL}." + Style.RESET_ALL)
         model_name = DEFAULT_MODEL
 
@@ -356,9 +407,22 @@ def choose_model(model_name, input_tokens, tier=CURRENT_TIER, assumed_output_tok
 
         # Continue with current model
         if choice == "" or choice.lower() in {"y", "yes", "continue", "c"}:
-            info = GUARDRAILS.ALLOWED_MODELS[model_name]
-            tpm_limit = info["tier"].get(tier)
-            over_input = input_tokens > info["max_input_tokens"]
+            # Map Ollama model names to ALLOWED_MODELS keys if needed
+            ollama_to_allowed_mapping = {
+                "qwen3:8b": "qwen",
+                "gpt-oss:20b": "gpt-oss:20b"
+            }
+            lookup_name = ollama_to_allowed_mapping.get(model_name, model_name)
+            info = GUARDRAILS.ALLOWED_MODELS.get(lookup_name, {})
+            if not info:
+                # Fallback: try direct lookup
+                info = GUARDRAILS.ALLOWED_MODELS.get(model_name, {})
+            if not info:
+                print(f"{Fore.YELLOW}⚠️  Model '{model_name}' not found in ALLOWED_MODELS{Fore.RESET}")
+                return model_name
+            
+            tpm_limit = info.get("tier", {}).get(tier) if info else None
+            over_input = input_tokens > info.get("max_input_tokens", 0) if info else False
             over_tpm = (not is_offline_model(model_name)) and (tpm_limit is not None) and (input_tokens > tpm_limit)
 
             if over_input or over_tpm:
@@ -378,7 +442,15 @@ def choose_model(model_name, input_tokens, tier=CURRENT_TIER, assumed_output_tok
         # Switch to different model
         if choice in GUARDRAILS.ALLOWED_MODELS:
             model_name = choice
-            info = GUARDRAILS.ALLOWED_MODELS[model_name]
+            # Map Ollama model names to ALLOWED_MODELS keys if needed
+            ollama_to_allowed_mapping = {
+                "qwen3:8b": "qwen",
+                "gpt-oss:20b": "gpt-oss:20b"
+            }
+            lookup_name = ollama_to_allowed_mapping.get(model_name, model_name)
+            info = GUARDRAILS.ALLOWED_MODELS.get(lookup_name, {})
+            if not info:
+                info = GUARDRAILS.ALLOWED_MODELS.get(model_name, {})
             print(f"\n{Fore.LIGHTGREEN_EX}Switched to: {model_name}{Fore.RESET}")
             
             if is_offline_model(model_name):
