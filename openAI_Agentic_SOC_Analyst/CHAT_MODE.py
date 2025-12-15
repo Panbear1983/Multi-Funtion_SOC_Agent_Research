@@ -18,10 +18,12 @@ class SocChatSession:
         self.model_name = model_name
         self.openai_client = openai_client
         self.conversation_history = []
+        self.conversation_summary = []  # Store summaries of older conversations
         
         # Safety limits
         self.MAX_TURNS = 15 if model_name == "qwen" else 5  # GPT-OSS has smaller context
         self.MAX_TOKENS = 100000 if model_name == "qwen" else 25000
+        self.RECENT_MESSAGES_TO_KEEP = 6 if model_name == "qwen" else 4  # Keep recent exchanges
         self.turn_count = 0
         
         # Build system context with findings
@@ -94,15 +96,116 @@ RULES:
             total_chars = sum(len(m.get("content", "")) for m in messages)
             return total_chars // 4  # ~4 chars per token
     
-    def _truncate_history_if_needed(self):
-        """Keep conversation within token budget"""
-        # Keep system message + last N exchanges
-        max_history = 8 if self.model_name == "qwen" else 3
+    def _summarize_conversation_history(self, messages_to_summarize):
+        """Summarize older conversation history to preserve context"""
+        if not messages_to_summarize:
+            return ""
         
-        if len(self.conversation_history) > max_history:
-            # Keep only recent history
-            self.conversation_history = self.conversation_history[-max_history:]
-            print(f"{Fore.YELLOW}📝 Truncated conversation history to last {max_history} exchanges{Fore.RESET}")
+        # Build conversation text for summarization
+        conversation_text = ""
+        for msg in messages_to_summarize:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if role == "user":
+                conversation_text += f"User: {content}\n\n"
+            elif role == "assistant":
+                conversation_text += f"Assistant: {content}\n\n"
+        
+        # Create summarization prompt
+        summary_prompt = f"""Summarize the following conversation about cybersecurity threat findings. 
+Focus on:
+- Key threats or findings discussed
+- Important IOCs (IPs, domains, hashes, accounts, devices) mentioned
+- MITRE techniques or attack patterns identified
+- Recommendations or next steps discussed
+
+Keep it concise (2-3 sentences max) but preserve critical information.
+
+Conversation to summarize:
+{conversation_text}
+
+Summary:"""
+        
+        # Use the same model for summarization
+        try:
+            summary_messages = [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that summarizes conversation history while preserving key cybersecurity information."
+                },
+                {
+                    "role": "user",
+                    "content": summary_prompt
+                }
+            ]
+            
+            is_offline = MODEL_SELECTOR.is_offline_model(self.model_name)
+            
+            if is_offline:
+                # Use Ollama for local models
+                summary_text = OLLAMA_CLIENT.chat(
+                    messages=summary_messages,
+                    model_name=self.model_name,
+                    json_mode=False,
+                    timeout=60
+                )
+            else:
+                # Use OpenAI for cloud models
+                if not self.openai_client:
+                    return ""  # Can't summarize without client
+                
+                response = self.openai_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=summary_messages,
+                    max_tokens=200,  # Keep summary short
+                    temperature=0.3  # Lower temperature for more factual summaries
+                )
+                summary_text = response.choices[0].message.content
+            
+            return summary_text.strip()
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️  Summarization failed: {e}. Using fallback.{Fore.RESET}")
+            # Fallback: simple extraction of key points
+            fallback_summary = "Previous conversation covered: "
+            key_points = []
+            for msg in messages_to_summarize[-4:]:  # Last 2 exchanges
+                content = msg.get("content", "")[:100]  # First 100 chars
+                if content:
+                    key_points.append(content[:50] + "...")
+            return fallback_summary + "; ".join(key_points[:3])
+    
+    def _truncate_history_if_needed(self):
+        """Keep conversation within token budget using smart summarization"""
+        # Check if we need to truncate
+        if len(self.conversation_history) <= self.RECENT_MESSAGES_TO_KEEP:
+            return  # No truncation needed
+        
+        # Calculate how many messages to keep vs summarize
+        messages_to_keep = self.conversation_history[-self.RECENT_MESSAGES_TO_KEEP:]
+        messages_to_summarize = self.conversation_history[:-self.RECENT_MESSAGES_TO_KEEP]
+        
+        # Summarize older messages
+        print(f"{Fore.YELLOW}📝 Summarizing {len(messages_to_summarize)} older messages to preserve context...{Fore.RESET}")
+        summary = self._summarize_conversation_history(messages_to_summarize)
+        
+        if summary:
+            # Add summary as a system-like message at the start of kept history
+            summary_message = {
+                "role": "assistant",
+                "content": f"[Previous conversation summary]: {summary}"
+            }
+            # Insert summary before recent messages
+            self.conversation_history = [summary_message] + messages_to_keep
+            self.conversation_summary.append({
+                "original_count": len(messages_to_summarize),
+                "summary": summary,
+                "timestamp": len(self.conversation_summary) + 1
+            })
+            print(f"{Fore.LIGHTGREEN_EX}✓ Summarized {len(messages_to_summarize)} messages into summary, kept {len(messages_to_keep)} recent messages{Fore.RESET}")
+        else:
+            # Fallback: simple truncation if summarization fails
+            self.conversation_history = messages_to_keep
+            print(f"{Fore.YELLOW}⚠️  Summarization unavailable, truncated to last {len(messages_to_keep)} exchanges{Fore.RESET}")
     
     def chat_loop(self):
         """Interactive chat about the findings"""
@@ -149,11 +252,15 @@ RULES:
             # Check token budget
             estimated_tokens = self._estimate_tokens(messages)
             if estimated_tokens > self.MAX_TOKENS:
-                print(f"{Fore.YELLOW}⚠️  Approaching token limit. Truncating history...{Fore.RESET}")
+                print(f"{Fore.YELLOW}⚠️  Approaching token limit ({estimated_tokens:,} > {self.MAX_TOKENS:,}). Summarizing history...{Fore.RESET}")
                 self._truncate_history_if_needed()
+                # Rebuild messages after summarization
                 messages = [
                     {"role": "system", "content": self.system_context}
                 ] + self.conversation_history
+                # Re-check tokens after summarization
+                new_estimated_tokens = self._estimate_tokens(messages)
+                print(f"{Fore.LIGHTGREEN_EX}✓ After summarization: {new_estimated_tokens:,} tokens (saved {estimated_tokens - new_estimated_tokens:,} tokens){Fore.RESET}")
             
             # Get response from model
             try:

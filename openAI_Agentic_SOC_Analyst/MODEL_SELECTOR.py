@@ -31,6 +31,10 @@ OFFLINE_GUARDRAILS_CONFIG = {
     "violation_log_file": "_guardrails_violations.jsonl"
 }
 
+# Authority Enhancement Configuration
+AUTHORITY_ENHANCEMENT_ENABLED = True  # Can disable if issues
+CONFIDENCE_BOOSTING_ENABLED = True     # Can disable if issues
+
 # ═══════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS (from MODEL_MANAGEMENT)
 # ═══════════════════════════════════════════════════════════════════════

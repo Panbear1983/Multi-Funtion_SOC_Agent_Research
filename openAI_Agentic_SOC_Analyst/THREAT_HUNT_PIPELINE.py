@@ -377,7 +377,7 @@ def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_con
                 limit = TIME_ESTIMATOR.get_model_context_limit(model)
 
             # Always confirm right before inference using real size/ETA
-            cost_info = CONFIRMATION_MANAGER.get_cost_info(model)
+            cost_info = CONFIRMATION_MANAGER.get_cost_info(model, input_tokens=approx_tokens)
             ok = CONFIRMATION_MANAGER.confirm_analysis_with_time_estimate(
                 model_name=model,
                 input_tokens=approx_tokens,
@@ -406,7 +406,7 @@ def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_con
             import CONFIRMATION_MANAGER
             records_csv = law_query_results.get("records", "")
             approx_tokens = max(1, len(records_csv) // 4)
-            cost_info = CONFIRMATION_MANAGER.get_cost_info(model)
+            cost_info = CONFIRMATION_MANAGER.get_cost_info(model, input_tokens=approx_tokens)
             ok = CONFIRMATION_MANAGER.confirm_analysis_with_time_estimate(
                 model_name=model,
                 input_tokens=approx_tokens,

@@ -74,9 +74,56 @@ def _should_chunk_messages(model_name, messages):
     except:
         return False, 0, 0
 
+def _calculate_available_chunk_size(messages, model_name, total_chunk_size_tokens):
+    """
+    Calculate available tokens for CSV data chunking.
+    Accounts for system message and user message prefix (instructions before Log Data).
+    """
+    # Extract system message and user message prefix
+    system_tokens = 0
+    user_prefix_tokens = 0
+    
+    for msg in messages:
+        if isinstance(msg, dict):
+            if msg.get("role") == "system":
+                system_content = msg.get("content", "")
+                # Use "gpt-4" encoding for token estimation (works for all models, fallback handles Ollama)
+                system_tokens = TIME_ESTIMATOR.estimate_tokens([system_content], "gpt-4")
+            elif msg.get("role") == "user":
+                content = msg.get("content", "")
+                # Extract user prefix (everything before "Log Data:" or "Analyze these logs:")
+                if "Log Data:" in content:
+                    user_prefix = content.split("Log Data:")[0]
+                elif "Analyze these logs:" in content:
+                    user_prefix = content.split("Analyze these logs:")[0]
+                else:
+                    user_prefix = content
+                # Use "gpt-4" encoding for token estimation (works for all models, fallback handles Ollama)
+                user_prefix_tokens = TIME_ESTIMATOR.estimate_tokens([user_prefix], "gpt-4")
+    
+    # Calculate available tokens for CSV data
+    # Reserve 1K tokens for safety buffer (model overhead, formatting, etc.)
+    safety_buffer = 1000
+    available_for_csv = total_chunk_size_tokens - system_tokens - user_prefix_tokens - safety_buffer
+    
+    # Ensure minimum chunk size (at least 1K tokens for CSV)
+    available_for_csv = max(available_for_csv, 1000)
+    
+    return available_for_csv, system_tokens, user_prefix_tokens
+
 def _chunk_and_process_local_model(enhancer, messages, model_name, max_lines, chunk_size_tokens):
     """Chunk messages and process with local model"""
     from color_support import Fore
+    
+    # Calculate actual available chunk size for CSV data (accounts for system/user messages)
+    available_csv_tokens, system_tokens, user_prefix_tokens = _calculate_available_chunk_size(
+        messages, model_name, chunk_size_tokens
+    )
+    
+    if available_csv_tokens < 1000:
+        print(f"{Fore.YELLOW}⚠️  Warning: System/user messages use most of context window. Available for CSV: {available_csv_tokens:,} tokens{Fore.RESET}")
+    
+    print(f"{Fore.LIGHTBLACK_EX}Chunk size breakdown: System={system_tokens:,} | User prefix={user_prefix_tokens:,} | Available for CSV={available_csv_tokens:,} | Total limit={chunk_size_tokens:,}{Fore.RESET}")
     
     # Extract CSV data
     csv_data = ""
@@ -96,7 +143,7 @@ def _chunk_and_process_local_model(enhancer, messages, model_name, max_lines, ch
         print(f"{Fore.YELLOW}No CSV data found for chunking{Fore.RESET}")
         return enhancer.enhanced_hunt(messages, model_name=model_name, max_lines=max_lines)
     
-    # Split CSV into chunks
+    # Split CSV into chunks using AVAILABLE tokens (not total chunk size)
     lines = csv_data.split('\n')
     if len(lines) < 2:
         return enhancer.enhanced_hunt(messages, model_name=model_name, max_lines=max_lines)
@@ -106,6 +153,7 @@ def _chunk_and_process_local_model(enhancer, messages, model_name, max_lines, ch
     
     chunks = []
     current_chunk = [header]
+    # Use "gpt-4" encoding for consistent token estimation (fallback handles Ollama models)
     current_tokens = TIME_ESTIMATOR.estimate_tokens([header], "gpt-4")
     
     for line in data_lines:
@@ -114,7 +162,8 @@ def _chunk_and_process_local_model(enhancer, messages, model_name, max_lines, ch
         
         line_tokens = TIME_ESTIMATOR.estimate_tokens([line], "gpt-4")
         
-        if current_tokens + line_tokens > chunk_size_tokens and len(current_chunk) > 1:
+        # Use available_csv_tokens instead of chunk_size_tokens
+        if current_tokens + line_tokens > available_csv_tokens and len(current_chunk) > 1:
             chunks.append('\n'.join(current_chunk))
             current_chunk = [header, line]
             current_tokens = TIME_ESTIMATOR.estimate_tokens([header, line], "gpt-4")

@@ -716,8 +716,8 @@ class GptOssEnhancer:
         # Apply rule-based analysis
         rule_findings, iocs = self.analyze_logs_with_rules(log_data, "Unknown")
         
-        # Build compact prompt
-        compact_messages = self._build_compact_prompt(messages, rule_findings, iocs, log_data)
+        # Build compact prompt (preserve system message guardrail like OpenAI/Qwen)
+        compact_messages = self._build_compact_prompt(messages, rule_findings, iocs, log_data, investigation_context, model_name)
         
         # Get LLM analysis with streaming; salvage partial on cancel/error
         print(f"{Fore.LIGHTGREEN_EX}Analyzing with {model_name} (streaming)...")
@@ -739,11 +739,15 @@ class GptOssEnhancer:
             print(f"{Fore.WHITE}Falling back to rule-based findings + partial text if any...")
 
         if buffer.strip():
+            # GPT-OSS specific: Validate and extract JSON before parsing
+            validated_buffer = self._validate_gpt_oss_response(buffer, "ctf" if is_ctf_mode else "threat_hunt")
+            retry_attempted = False
+            
             try:
                 # CTF mode: Use CTF parser
                 if is_ctf_mode:
                     import RESPONSE_PARSER
-                    ctf_result = RESPONSE_PARSER.parse_response(buffer, "ctf")
+                    ctf_result = RESPONSE_PARSER.parse_response(validated_buffer, "ctf")
                     # Convert CTF format to findings format for compatibility
                     llm_findings = []
                     if ctf_result.get("suggested_answer"):
@@ -761,27 +765,73 @@ class GptOssEnhancer:
                         llm_findings = []
                 else:
                     # Default threat hunt format
-                    llm_results = json.loads(buffer)
+                    llm_results = json.loads(validated_buffer)
                     llm_findings = llm_results.get("findings", [])
-            except json.JSONDecodeError:
-                # Salvage partial content: extract entities and attach
-                partial_text = buffer[-4000:]
-                devices = re.findall(r'(?:DeviceName|Computer)\s*[:=]\s*([A-Za-z0-9._-]{2,})', partial_text)
-                accounts = re.findall(r'(?:AccountName|User|UPN|UserPrincipalName)\s*[:=]\s*([A-Za-z0-9._@-]{3,})', partial_text)
-                finding = {
-                    "title": "Partial LLM Analysis (incomplete)",
-                    "description": "LLM response was interrupted. Partial text captured.",
-                    "confidence": "Low",
-                    "log_lines": [],
-                    "indicators_of_compromise": [],
-                    "tags": ["partial", "llm-analysis"],
-                    "notes": partial_text
-                }
-                if devices:
-                    finding["device_name"] = devices[0]
-                if accounts:
-                    finding["account_name"] = accounts[0]
-                llm_findings = [finding]
+            except json.JSONDecodeError as e:
+                # GPT-OSS specific: Retry with stricter prompt (max 1 retry)
+                if not retry_attempted:
+                    retry_buffer = self._retry_with_stricter_prompt(compact_messages, model_name, str(e), investigation_context)
+                    if retry_buffer:
+                        retry_attempted = True
+                        try:
+                            if is_ctf_mode:
+                                import RESPONSE_PARSER
+                                ctf_result = RESPONSE_PARSER.parse_response(retry_buffer, "ctf")
+                                llm_findings = []
+                                if ctf_result.get("suggested_answer"):
+                                    llm_findings = [{
+                                        "title": f"CTF Answer: {ctf_result.get('suggested_answer', 'N/A')}",
+                                        "description": ctf_result.get("explanation", ""),
+                                        "confidence": ctf_result.get("confidence", "Low"),
+                                        "log_lines": [],
+                                        "indicators_of_compromise": [ctf_result.get("suggested_answer", "")],
+                                        "tags": ["ctf", "flag-answer"],
+                                        "notes": f"Evidence rows: {ctf_result.get('evidence_rows', [])}, Fields: {ctf_result.get('evidence_fields', [])}",
+                                        "_ctf_analysis": ctf_result
+                                    }]
+                            else:
+                                llm_results = json.loads(retry_buffer)
+                                llm_findings = llm_results.get("findings", [])
+                        except json.JSONDecodeError:
+                            # Retry also failed, fall through to extraction
+                            pass
+                
+                # GPT-OSS specific: Enhanced extraction fallback
+                if not llm_findings:
+                    if is_ctf_mode:
+                        # Use GPT-OSS specific CTF extraction
+                        ctf_result = self._extract_ctf_answer_from_text(buffer)
+                        llm_findings = []
+                        if ctf_result.get("suggested_answer"):
+                            llm_findings = [{
+                                "title": f"CTF Answer (extracted): {ctf_result.get('suggested_answer', 'N/A')}",
+                                "description": ctf_result.get("explanation", ""),
+                                "confidence": ctf_result.get("confidence", "Low"),
+                                "log_lines": [],
+                                "indicators_of_compromise": [ctf_result.get("suggested_answer", "")],
+                                "tags": ["ctf", "flag-answer", "extracted"],
+                                "notes": "Answer extracted from natural language response using pattern matching",
+                                "_ctf_analysis": ctf_result
+                            }]
+                    else:
+                        # Threat hunt fallback: extract entities
+                        partial_text = buffer[-4000:]
+                        devices = re.findall(r'(?:DeviceName|Computer)\s*[:=]\s*([A-Za-z0-9._-]{2,})', partial_text)
+                        accounts = re.findall(r'(?:AccountName|User|UPN|UserPrincipalName)\s*[:=]\s*([A-Za-z0-9._@-]{3,})', partial_text)
+                        finding = {
+                            "title": "Partial LLM Analysis (incomplete)",
+                            "description": "LLM response was interrupted. Partial text captured.",
+                            "confidence": "Low",
+                            "log_lines": [],
+                            "indicators_of_compromise": [],
+                            "tags": ["partial", "llm-analysis"],
+                            "notes": partial_text
+                        }
+                        if devices:
+                            finding["device_name"] = devices[0]
+                        if accounts:
+                            finding["account_name"] = accounts[0]
+                        llm_findings = [finding]
         
         # For CTF mode, return CTF format directly
         if is_ctf_mode and llm_findings and llm_findings[0].get("_ctf_analysis"):
@@ -794,6 +844,9 @@ class GptOssEnhancer:
         
         # Deduplicate and limit
         final_findings = self._deduplicate_findings(combined_findings)[:25]  # Increased to max 25 total
+        
+        # Post-process: Boost confidence when evidence is strong (no token cost)
+        final_findings = self._boost_confidence_if_evidence_strong(final_findings)
         
         # Optionally refine with GPT-4/5 for better quality (hybrid mode)
         if self.use_gpt_refinement and self.openai_client and final_findings:
@@ -824,34 +877,115 @@ class GptOssEnhancer:
             print(f"{Fore.YELLOW}Rule-based pattern analysis error: {e}{Fore.RESET}")
             return [], []
 
-    def _build_compact_prompt(self, messages, rule_findings, iocs, log_data):
-        """Build extremely token-efficient prompt for 32K limit"""
+    def _build_compact_prompt(self, messages, rule_findings, iocs, log_data, investigation_context=None, model_name="gpt-oss:20b"):
+        """
+        Build token-efficient prompt while preserving system message guardrail.
+        Follows same pattern as OpenAI/Qwen models - preserves role definition.
+        """
         compact_messages = []
         
-        # Ultra-simplified system message
-        compact_messages.append({
-            "role": "system",
-            "content": "Cybersecurity analyst. Find threats. Return JSON: {\"findings\": [{\"title\":\"\", \"description\":\"\", \"confidence\":\"\"}]}"
-        })
+        # GUARDRAIL: Preserve original system message (same pattern as OpenAI/Qwen)
+        # This maintains cybersecurity analyst role definition and CTF instructions
+        original_system_msg = None
+        original_user_msg = None
         
-        # Build minimal context
-        context = "Analysis:\n"
+        for msg in messages:
+            if msg.get("role") == "system":
+                original_system_msg = msg
+            elif msg.get("role") == "user":
+                original_user_msg = msg
         
+        # Preserve system message if it exists (contains role guardrail)
+        if original_system_msg:
+            # Check if we can add authority enhancement (token-aware)
+            if self._can_add_authority_enhancement(compact_messages, model_name):
+                enhanced_system_msg = self._enhance_system_prompt_authority(original_system_msg, model_name)
+                compact_messages.append(enhanced_system_msg)
+                print(f"{Fore.LIGHTGREEN_EX}[GPT_OSS] ✓ Preserved system message + authority enhancement{Fore.RESET}")
+            else:
+                compact_messages.append(original_system_msg)  # Use original if token budget tight
+                print(f"{Fore.LIGHTGREEN_EX}[GPT_OSS] ✓ Preserved system message guardrail (token budget preserved){Fore.RESET}")
+        else:
+            # Fallback: Ultra-compact for GPT-OSS (32K limit - every token counts)
+            fallback_msg = {
+                "role": "system",
+                "content": "Senior SOC Analyst. Confident threat assessments. Return JSON: {\"findings\": [{\"title\":\"\", \"description\":\"\", \"confidence\":\"\"}]}"
+            }
+            compact_messages.append(fallback_msg)
+            print(f"{Fore.YELLOW}[GPT_OSS] ⚠️  No system message found, using ultra-compact fallback{Fore.RESET}")
+        
+        # Extract CTF context from original user message if available
+        ctf_context = ""
+        if investigation_context and investigation_context.get('mode') == 'ctf':
+            flag_objective = investigation_context.get('flag_objective', '')
+            expected_format = investigation_context.get('expected_format', 'any')
+            if flag_objective:
+                ctf_context = f"""
+🎯 CTF FLAG OBJECTIVE: {flag_objective}
+📋 EXPECTED FORMAT: {expected_format}
+
+CRITICAL JSON FORMAT REQUIREMENT:
+You MUST return ONLY valid JSON. No natural language explanations outside JSON.
+
+REQUIRED JSON FORMAT:
+{{
+  "suggested_answer": "exact flag value matching expected format",
+  "confidence": "High|Medium|Low",
+  "evidence_rows": [0, 1],
+  "evidence_fields": ["FieldName1", "FieldName2"],
+  "explanation": "brief explanation of reasoning",
+  "correlation": ""
+}}
+
+EXAMPLE VALID RESPONSE:
+{{
+  "suggested_answer": "192.168.1.100",
+  "confidence": "High",
+  "evidence_rows": [0],
+  "evidence_fields": ["RemoteIP"],
+  "explanation": "Most recent outbound connection to external IP",
+  "correlation": ""
+}}
+
+IMPORTANT:
+- Return ONLY the JSON object. No markdown, no code blocks, no explanations.
+- Work with the AVAILABLE log data. Do NOT ask for more data.
+- Extract the exact answer from the provided logs.
+"""
+        
+        # Build optimized user message (preserve CTF context, optimize log data)
+        context = ""
+        
+        # Preserve CTF context if present
+        if ctf_context:
+            context += ctf_context
+        
+        # Add rule findings summary (minimal to save tokens)
         if rule_findings:
-            # Only show count, not details (save tokens)
-            context += f"{len(rule_findings)} patterns detected.\n"
+            context += f"Rule-based analysis: {len(rule_findings)} patterns detected.\n"
         
+        # Add IOC summary (minimal)
         if iocs:
-            # Minimal IOC summary
             context += "IOCs: "
             ioc_summary = []
             for ioc_type, values in iocs.items():
                 if values:
                     ioc_summary.append(f"{len(values)} {ioc_type}")
-            context += ", ".join(ioc_summary) + "\n"
+            if ioc_summary:
+                context += ", ".join(ioc_summary) + "\n"
         
-        # Drastically reduce log data - only first 800 chars
-        context += f"\nLogs ({len(log_data.split(chr(10)))} lines):\n{log_data[:800]}"
+        # Optimize log data - preserve more for CTF mode (needs evidence)
+        if investigation_context and investigation_context.get('mode') == 'ctf':
+            # CTF mode: preserve more log data (up to 2000 chars) for flag inference
+            max_log_chars = min(2000, len(log_data))
+            context += f"\nLog Data ({len(log_data.split(chr(10)))} lines, showing first {max_log_chars} chars):\n{log_data[:max_log_chars]}"
+            if len(log_data) > max_log_chars:
+                context += f"\n... (truncated, {len(log_data)} total chars)"
+        else:
+            # Threat hunt mode: aggressive truncation (800 chars)
+            context += f"\nLog Data ({len(log_data.split(chr(10)))} lines):\n{log_data[:800]}"
+            if len(log_data) > 800:
+                context += f"\n... (truncated for token optimization)"
         
         compact_messages.append({
             "role": "user",
@@ -859,6 +993,92 @@ class GptOssEnhancer:
         })
         
         return compact_messages
+
+    def _can_add_authority_enhancement(self, messages, model_name):
+        """Check if GPT-OSS has token budget for authority enhancement"""
+        import MODEL_SELECTOR
+        import TIME_ESTIMATOR
+        
+        if not MODEL_SELECTOR.AUTHORITY_ENHANCEMENT_ENABLED:
+            return False
+        
+        # Only check for GPT-OSS (Qwen has 128K, no check needed)
+        if model_name != "gpt-oss:20b":
+            return True  # Qwen can always add
+        
+        # Estimate current token usage
+        current_tokens = TIME_ESTIMATOR.estimate_tokens(messages, model_name)
+        model_limit = TIME_ESTIMATOR.get_model_context_limit(model_name)
+        
+        # GPT-OSS: Need >5K headroom (conservative - 85% threshold)
+        # Authority enhancement adds ~50 tokens
+        threshold = model_limit * 0.85
+        can_add = (current_tokens + 50) < threshold
+        
+        if not can_add:
+            print(f"{Fore.YELLOW}[GPT_OSS] Skipping authority enhancement - token budget tight ({current_tokens:,}/{model_limit:,} tokens){Fore.RESET}")
+        
+        return can_add
+
+    def _enhance_system_prompt_authority(self, system_msg, model_name):
+        """Add authority framing - GPT-OSS uses ultra-compact version"""
+        import MODEL_SELECTOR
+        
+        if not MODEL_SELECTOR.AUTHORITY_ENHANCEMENT_ENABLED:
+            return system_msg
+        
+        # GPT-OSS: Ultra-compact (32K limit - every token counts)
+        if model_name == "gpt-oss:20b":
+            authority_header = "Senior SOC Analyst. Confident assessments based on evidence."
+            # ~10 tokens - minimal but authoritative
+        
+        # Qwen: Full authority header (128K limit - can afford more)
+        elif model_name in ["qwen", "qwen3:8b"]:
+            authority_header = """You are a Senior SOC Analyst with 10+ years of threat hunting experience.
+Provide confident, authoritative assessments based on evidence.
+Take ownership of your findings."""
+            # ~30 tokens - full authority framing
+        
+        else:
+            return system_msg  # Unknown model, skip
+        
+        # Append to existing content (preserve original)
+        original_content = system_msg.get('content', '')
+        enhanced_content = authority_header + "\n\n" + original_content
+        
+        return {"role": "system", "content": enhanced_content}
+
+    def _boost_confidence_if_evidence_strong(self, findings):
+        """Post-process: Boost confidence when evidence supports it (GPT-OSS optimized)"""
+        import MODEL_SELECTOR
+        
+        if not MODEL_SELECTOR.CONFIDENCE_BOOSTING_ENABLED:
+            return findings
+        
+        boosted_count = 0
+        for finding in findings:
+            iocs = finding.get('indicators_of_compromise', [])
+            log_lines = finding.get('log_lines', [])
+            current_confidence = finding.get('confidence', 'Medium')
+            
+            # GPT-OSS: More conservative boosting (fewer false positives)
+            # Require stronger evidence than Qwen
+            ioc_count = len(iocs) if isinstance(iocs, list) else 0
+            log_count = len(log_lines) if isinstance(log_lines, list) else 0
+            
+            # Strong evidence: 3+ IOCs AND 2+ log lines
+            if ioc_count >= 3 and log_count >= 2:
+                if current_confidence in ['Low', 'Medium']:
+                    finding['confidence'] = 'High'
+                    existing_notes = finding.get('notes', '')
+                    finding['notes'] = (existing_notes + 
+                                      " [Confidence boosted: Strong evidence present]").strip()
+                    boosted_count += 1
+        
+        if boosted_count > 0:
+            print(f"{Fore.LIGHTGREEN_EX}[GPT_OSS] ✓ Boosted confidence for {boosted_count} findings{Fore.RESET}")
+        
+        return findings
 
     def _deduplicate_findings(self, findings):
         """Simple deduplication"""
@@ -872,6 +1092,237 @@ class GptOssEnhancer:
                 deduplicated.append(finding)
         
         return deduplicated
+
+    # ========== GPT-OSS SPECIFIC: JSON Validation & Extraction Methods ==========
+    
+    def _extract_json_from_markdown(self, buffer):
+        """GPT-OSS specific: Extract JSON from markdown code blocks"""
+        # Try to find JSON in markdown code blocks
+        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        matches = re.findall(json_pattern, buffer, re.DOTALL)
+        if matches:
+            return matches[0]  # Return first JSON match
+        
+        # Try without language tag
+        json_pattern2 = r'```\s*(\{.*?\})\s*```'
+        matches2 = re.findall(json_pattern2, buffer, re.DOTALL)
+        if matches2:
+            return matches2[0]
+        
+        return None
+    
+    def _strip_non_json_text(self, buffer):
+        """GPT-OSS specific: Remove leading/trailing non-JSON text"""
+        buffer = buffer.strip()
+        
+        # Find first { and last }
+        first_brace = buffer.find('{')
+        last_brace = buffer.rfind('}')
+        
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            return buffer[first_brace:last_brace + 1]
+        
+        return buffer
+    
+    def _validate_gpt_oss_response(self, buffer, mode="ctf"):
+        """
+        GPT-OSS specific: Validate and extract JSON from response buffer
+        Returns validated JSON string ready for parsing
+        """
+        if not buffer or not buffer.strip():
+            return buffer
+        
+        # Step 1: Try direct JSON parse
+        try:
+            json.loads(buffer.strip())
+            return buffer.strip()  # Already valid JSON
+        except json.JSONDecodeError:
+            pass
+        
+        # Step 2: Extract from markdown code blocks
+        extracted = self._extract_json_from_markdown(buffer)
+        if extracted:
+            try:
+                json.loads(extracted)
+                print(f"{Fore.LIGHTGREEN_EX}[GPT_OSS] ✓ Extracted JSON from markdown code block{Fore.RESET}")
+                return extracted
+            except json.JSONDecodeError:
+                pass
+        
+        # Step 3: Strip leading/trailing text
+        stripped = self._strip_non_json_text(buffer)
+        try:
+            json.loads(stripped)
+            print(f"{Fore.LIGHTGREEN_EX}[GPT_OSS] ✓ Extracted JSON by stripping non-JSON text{Fore.RESET}")
+            return stripped
+        except json.JSONDecodeError:
+            pass
+        
+        # Step 4: Return original buffer (will be handled by fallback parser)
+        print(f"{Fore.YELLOW}[GPT_OSS] ⚠️  Could not extract valid JSON, using original buffer{Fore.RESET}")
+        return buffer
+    
+    def _extract_ctf_answer_from_text(self, buffer):
+        """
+        GPT-OSS specific: Enhanced CTF answer extraction from natural language
+        Extracts IP addresses, filenames, usernames, and other flag-like values
+        """
+        import base64
+        import binascii
+        
+        content_str = str(buffer)
+        suggested_answer = ""
+        confidence = "Low"
+        explanation = content_str[:1000] if len(content_str) > 1000 else content_str
+        
+        # Pattern 1: IP addresses (IPv4)
+        ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+        ip_matches = re.findall(ip_pattern, content_str)
+        if ip_matches:
+            # Take the most recent/last IP mentioned (often the answer)
+            suggested_answer = ip_matches[-1]
+            confidence = "Medium"
+            explanation = f"Extracted IP address from natural language response: {suggested_answer}"
+        
+        # Pattern 2: Filenames with extensions
+        if not suggested_answer:
+            filename_pattern = r'[\w\-_]+\.(txt|exe|dll|bat|ps1|sh|log|json|xml|yaml|yml|conf|config|ini)'
+            filename_matches = re.findall(filename_pattern, content_str, re.IGNORECASE)
+            if filename_matches:
+                # Find the actual filename (not just extension)
+                full_filename_pattern = r'[\w\-_/\\]+\.(?:txt|exe|dll|bat|ps1|sh|log|json|xml|yaml|yml|conf|config|ini)'
+                full_matches = re.findall(full_filename_pattern, content_str, re.IGNORECASE)
+                if full_matches:
+                    suggested_answer = full_matches[-1].split('/')[-1].split('\\')[-1]  # Get just filename
+                    confidence = "Medium"
+                    explanation = f"Extracted filename from natural language response: {suggested_answer}"
+        
+        # Pattern 3: Usernames/Account names
+        if not suggested_answer:
+            username_pattern = r'(?:username|account|user|accountname)\s*[:=]\s*([A-Za-z0-9._@-]{3,})'
+            username_matches = re.findall(username_pattern, content_str, re.IGNORECASE)
+            if username_matches:
+                suggested_answer = username_matches[-1]
+                confidence = "Medium"
+                explanation = f"Extracted username/account from natural language response: {suggested_answer}"
+        
+        # Pattern 4: Extract from KQL queries if present
+        if not suggested_answer:
+            kql_pattern = r'(?:RemoteIP|AccountName|FileName|ProcessCommandLine)\s*[:=]\s*["\']?([^"\'\s]+)["\']?'
+            kql_matches = re.findall(kql_pattern, content_str, re.IGNORECASE)
+            if kql_matches:
+                suggested_answer = kql_matches[-1]
+                confidence = "Low"
+                explanation = f"Extracted value from KQL query pattern: {suggested_answer}"
+        
+        # Pattern 5: Base64/Hex encoded strings (potential flags)
+        if not suggested_answer:
+            # Look for base64-like strings
+            base64_pattern = r'[A-Za-z0-9+/]{20,}={0,2}'
+            base64_matches = re.findall(base64_pattern, content_str)
+            if base64_matches:
+                # Try to decode
+                for match in base64_matches[-3:]:  # Check last 3 matches
+                    try:
+                        decoded = base64.b64decode(match).decode('utf-8', errors='ignore')
+                        if decoded and len(decoded) < 100:  # Reasonable length
+                            suggested_answer = decoded
+                            confidence = "Low"
+                            explanation = f"Decoded base64 string: {suggested_answer}"
+                            break
+                    except:
+                        pass
+        
+        return {
+            "suggested_answer": suggested_answer,
+            "confidence": confidence,
+            "evidence_rows": [],
+            "evidence_fields": [],
+            "explanation": explanation,
+            "correlation": ""
+        }
+    
+    def _retry_with_stricter_prompt(self, compact_messages, model_name, original_error, investigation_context=None):
+        """
+        GPT-OSS specific: Retry with stricter JSON enforcement prompt
+        Returns retried response or None if retry fails
+        """
+        print(f"{Fore.YELLOW}[GPT_OSS] ⚠️  Retrying with stricter JSON enforcement...{Fore.RESET}")
+        
+        # Create stricter system message
+        stricter_system_msg = None
+        for msg in compact_messages:
+            if msg.get("role") == "system":
+                original_content = msg.get("content", "")
+                # Add strict JSON enforcement
+                stricter_content = original_content + "\n\n" + """
+CRITICAL JSON FORMAT REQUIREMENT:
+- You MUST return ONLY valid JSON. No natural language outside JSON.
+- No explanations, no markdown, no code blocks.
+- Return raw JSON starting with { and ending with }.
+- For CTF mode: {"suggested_answer": "...", "confidence": "...", "explanation": "...", "evidence_rows": [], "evidence_fields": [], "correlation": ""}
+- For threat hunt: {"findings": [...]}
+"""
+                stricter_system_msg = {"role": "system", "content": stricter_content}
+                break
+        
+        # Build retry messages
+        retry_messages = []
+        if stricter_system_msg:
+            retry_messages.append(stricter_system_msg)
+        else:
+            # Fallback: create new strict system message
+            is_ctf = investigation_context and investigation_context.get('mode') == 'ctf'
+            if is_ctf:
+                retry_messages.append({
+                    "role": "system",
+                    "content": """Senior SOC Analyst. CTF Flag Hunter.
+
+CRITICAL: Return ONLY valid JSON in this exact format:
+{"suggested_answer": "flag value", "confidence": "High|Medium|Low", "explanation": "brief explanation", "evidence_rows": [], "evidence_fields": [], "correlation": ""}
+
+NO natural language. NO markdown. NO explanations outside JSON."""
+                })
+            else:
+                retry_messages.append({
+                    "role": "system",
+                    "content": """Senior SOC Analyst. Return ONLY valid JSON: {"findings": [...]}
+
+NO natural language. NO markdown. NO explanations outside JSON."""
+                })
+        
+        # Add user messages
+        for msg in compact_messages:
+            if msg.get("role") == "user":
+                retry_messages.append(msg)
+        
+        # Retry with lower temperature for more deterministic output
+        try:
+            buffer = ""
+            for chunk in OLLAMA_CLIENT.chat_stream(messages=retry_messages, model_name=model_name):
+                try:
+                    obj = json.loads(chunk)
+                    msg = (obj.get("message") or {}).get("content", "") or obj.get("response", "")
+                    if msg:
+                        buffer += msg
+                except Exception:
+                    buffer += chunk if isinstance(chunk, str) else ""
+            
+            if buffer.strip():
+                # Validate the retried response
+                validated = self._validate_gpt_oss_response(buffer, "ctf" if (investigation_context and investigation_context.get('mode') == 'ctf') else "threat_hunt")
+                try:
+                    json.loads(validated)
+                    print(f"{Fore.LIGHTGREEN_EX}[GPT_OSS] ✓ Retry successful - received valid JSON{Fore.RESET}")
+                    return validated
+                except json.JSONDecodeError:
+                    print(f"{Fore.YELLOW}[GPT_OSS] ⚠️  Retry still returned invalid JSON{Fore.RESET}")
+                    return None
+        except Exception as e:
+            print(f"{Fore.YELLOW}[GPT_OSS] ⚠️  Retry failed: {e}{Fore.RESET}")
+            return None
+        
+        return None
 
     def _standard_llm_analysis(self, messages, model_name):
         """Fallback to standard analysis"""

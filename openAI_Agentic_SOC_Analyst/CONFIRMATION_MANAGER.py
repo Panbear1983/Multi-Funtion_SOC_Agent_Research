@@ -5,6 +5,7 @@ Shows analysis confirmation before starting processing
 
 from color_support import Fore, Style
 import TIME_ESTIMATOR
+import GUARDRAILS
 
 
 def confirm_analysis_with_time_estimate(model_name, input_tokens, cost_info, investigation_mode="threat_hunt", severity_config=None):
@@ -46,12 +47,24 @@ def confirm_analysis_with_time_estimate(model_name, input_tokens, cost_info, inv
     else:
         print("Estimated time: Unknown")
     
-    # Cost info
+    # Cost info - handle both string and numeric costs
     if cost_info:
-        if cost_info.get('cost') == 'Free':
+        cost_value = cost_info.get('cost')
+        if cost_value == 'Free' or cost_value == 'FREE':
             print(f"Cost: {Fore.LIGHTGREEN_EX}FREE{Fore.RESET}")
+        elif isinstance(cost_value, (int, float)):
+            # Show formatted cost estimate with appropriate precision
+            if cost_value < 0.0001:
+                print(f"Cost: {Fore.LIGHTGREEN_EX}${cost_value:.6f}{Fore.RESET}")
+            elif cost_value < 0.01:
+                print(f"Cost: {Fore.LIGHTGREEN_EX}${cost_value:.4f}{Fore.RESET}")
+            elif cost_value < 1.0:
+                print(f"Cost: {Fore.LIGHTYELLOW_EX}${cost_value:.4f}{Fore.RESET}")
+            else:
+                print(f"Cost: {Fore.LIGHTYELLOW_EX}${cost_value:.2f}{Fore.RESET}")
         else:
-            print(f"Cost: {cost_info.get('cost', 'Unknown')}")
+            # String cost (fallback)
+            print(f"Cost: {cost_value}")
     
     # Processing details
     print(f"\n{Fore.LIGHTYELLOW_EX}Processing Details:{Fore.RESET}")
@@ -91,23 +104,63 @@ def confirm_analysis_with_time_estimate(model_name, input_tokens, cost_info, inv
             return False
 
 
-def get_cost_info(model_name):
+def get_cost_info(model_name, input_tokens=None):
     """
-    Get cost information for a model
+    Get cost information for a model with accurate cost calculation for OpenAI models
     
     Args:
         model_name (str): Model name
+        input_tokens (int, optional): Estimated input tokens for cost calculation
     
     Returns:
-        dict: Cost information
+        dict: Cost information with actual cost estimate if input_tokens provided
     """
     
+    # Check if it's a local/offline model
     if model_name in ["qwen", "gpt-oss:20b", "local-mix"]:
         return {"cost": "Free", "type": "Local/Offline"}
-    else:
-        # For OpenAI models, we'd need to look up the actual cost
-        # For now, return a placeholder
-        return {"cost": "Variable", "type": "Cloud/API"}
+    
+    # For OpenAI models, calculate actual cost if input_tokens provided
+    if model_name in GUARDRAILS.ALLOWED_MODELS:
+        model_info = GUARDRAILS.ALLOWED_MODELS[model_name]
+        
+        if input_tokens and input_tokens > 0:
+            # Estimate output tokens based on task type
+            # For security analysis tasks, output is typically 10-20% of input
+            # Using 15% as a reasonable estimate for CTF/threat hunting analysis
+            # This accounts for structured findings, explanations, and evidence summaries
+            estimated_output_tokens = int(input_tokens * 0.15)
+            
+            # Ensure output doesn't exceed model's max_output_tokens
+            max_output = model_info.get("max_output_tokens", 32768)
+            if estimated_output_tokens > max_output:
+                estimated_output_tokens = max_output
+            
+            # Calculate costs using pricing from GUARDRAILS.ALLOWED_MODELS
+            input_cost_per_million = model_info["cost_per_million_input"]
+            output_cost_per_million = model_info["cost_per_million_output"]
+            
+            input_cost = (input_tokens / 1_000_000.0) * input_cost_per_million
+            output_cost = (estimated_output_tokens / 1_000_000.0) * output_cost_per_million
+            total_cost = input_cost + output_cost
+            
+            return {
+                "cost": total_cost,  # Numeric value for proper formatting
+                "type": "Cloud/API",
+                "input_cost": input_cost,
+                "output_cost": output_cost,
+                "estimated_output_tokens": estimated_output_tokens,
+                "input_tokens": input_tokens
+            }
+        else:
+            # No input tokens provided - return pricing info
+            return {
+                "cost": f"${model_info['cost_per_million_input']:.2f}/${model_info['cost_per_million_output']:.2f} per M tokens",
+                "type": "Cloud/API"
+            }
+    
+    # Fallback for unknown models
+    return {"cost": "Variable", "type": "Cloud/API"}
 
 
 def format_time_display(seconds):

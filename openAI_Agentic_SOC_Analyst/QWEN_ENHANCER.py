@@ -637,6 +637,12 @@ class QwenEnhancer:
     def analyze_logs_with_rules(self, log_data, table_name="Unknown"):
         """Apply rule-based analysis to identify suspicious patterns"""
         findings = []
+        
+        # Early return if log_data is empty or None
+        if not log_data or not log_data.strip():
+            print(f"{Fore.YELLOW}[QWEN_ENHANCER] Empty log data provided, skipping rule-based analysis{Fore.RESET}")
+            return [], {}
+        
         log_lines = log_data.split('\n')
         
         # Parse CSV header to get column indices
@@ -658,7 +664,11 @@ class QwenEnhancer:
                 parts = first_data_line.split(',')
                 print(f"{Fore.LIGHTBLACK_EX}[DEBUG] First data row ({len(parts)} columns):{Fore.RESET}")
                 for idx, val in enumerate(parts[:10]):  # Show first 10 columns
-                    col_name = csv_header[idx] if idx < len(csv_header) else f"col_{idx}"
+                    # Fix: Check if csv_header exists and has enough elements before accessing
+                    if csv_header and idx < len(csv_header):
+                        col_name = csv_header[idx]
+                    else:
+                        col_name = f"col_{idx}"
                     print(f"{Fore.LIGHTBLACK_EX}  [{idx}] {col_name} = {val[:60]}{Fore.RESET}")
         
         for line_num, line in enumerate(log_lines, 1):
@@ -974,13 +984,16 @@ class QwenEnhancer:
     def _detect_table_from_csv(self, csv_text):
         """
         Detect which table the CSV data came from based on column headers
+        Returns tuple: (table_name, confidence_score)
+        confidence_score: 0.0-1.0 (1.0 = perfect match, 0.5+ = high confidence)
         """
         # Extract first line (headers)
         lines = csv_text.strip().split('\n')
         if len(lines) < 2:
-            return "Unknown"
+            return ("Unknown", 0.0)
         
-        headers = lines[0].lower()
+        headers_lower = lines[0].lower()
+        headers_list = [h.strip().lower() for h in lines[0].split(',')]
         
         # Table signatures (unique field combinations)
         table_signatures = {
@@ -998,20 +1011,58 @@ class QwenEnhancer:
             'AzureNetworkAnalyticsIPDetails_CL': ['publicipaddress_s', 'publicipdetails_s', 'organization_s']
         }
         
-        # Find best match
-        for table_name, signature_fields in table_signatures.items():
-            matches = sum(1 for field in signature_fields if field in headers)
-            if matches >= len(signature_fields) - 1:  # Allow 1 missing field
-                return table_name
+        best_match = None
+        best_confidence = 0.0
         
-        return "Unknown"
+        # Find best match with confidence scoring
+        for table_name, signature_fields in table_signatures.items():
+            # Count exact matches
+            exact_matches = sum(1 for field in signature_fields if field in headers_lower)
+            
+            # Count fuzzy matches (field name contains signature or vice versa)
+            fuzzy_matches = 0
+            for sig_field in signature_fields:
+                for header in headers_list:
+                    if sig_field in header or header in sig_field:
+                        fuzzy_matches += 1
+                        break
+            
+            # Calculate confidence: exact matches weighted higher
+            total_signature_fields = len(signature_fields)
+            if total_signature_fields > 0:
+                exact_ratio = exact_matches / total_signature_fields
+                fuzzy_bonus = min(fuzzy_matches / total_signature_fields, 0.3)  # Max 0.3 bonus
+                confidence = exact_ratio + fuzzy_bonus
+                
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_match = table_name
+        
+        # High confidence threshold: >= 0.5 (at least half fields match)
+        if best_confidence >= 0.5:
+            return (best_match, best_confidence)
+        
+        return ("Unknown", best_confidence)
     
-    def _validate_and_filter_fields(self, csv_text, table_name):
+    def _validate_and_filter_fields(self, csv_text, table_name, detection_confidence=1.0):
         """
         Validate CSV fields against GUARDRAILS and filter out unauthorized fields
+        Uses flexible matching: case-insensitive, fuzzy matching for field variations
+        
+        Args:
+            csv_text: CSV data to validate
+            table_name: Detected table name
+            detection_confidence: Confidence score from table detection (0.0-1.0)
+        
+        Returns:
+            tuple: (filtered_csv, is_valid)
         """
         if table_name == "Unknown":
-            print(f"{Fore.YELLOW}[QWEN_ENHANCER] Could not detect table - proceeding with caution{Fore.RESET}")
+            # Low confidence detection - allow with warning
+            if detection_confidence < 0.3:
+                print(f"{Fore.YELLOW}[QWEN_ENHANCER] Low confidence table detection ({detection_confidence:.2f}) - proceeding with caution{Fore.RESET}")
+            else:
+                print(f"{Fore.YELLOW}[QWEN_ENHANCER] Could not detect table - proceeding with caution{Fore.RESET}")
             return csv_text, True  # Allow but warn
         
         if table_name not in self.allowed_tables:
@@ -1027,14 +1078,46 @@ class QwenEnhancer:
         headers = lines[0].split(',')
         allowed_fields = self.allowed_tables[table_name]
         
-        # Check each field
+        # Normalize allowed fields to lowercase for comparison
+        allowed_fields_lower = {f.lower() for f in allowed_fields}
+        
+        # Check each field with flexible matching
         unauthorized_fields = []
         authorized_indices = []
+        matched_fields = {}  # Track which allowed field matched each header
         
         for idx, header in enumerate(headers):
             header_clean = header.strip()
-            if header_clean in allowed_fields:
+            header_lower = header_clean.lower()
+            
+            # Try exact match (case-insensitive)
+            matched = False
+            matched_field = None
+            
+            if header_lower in allowed_fields_lower:
+                # Exact match found
+                matched = True
+                # Find original case version
+                for af in allowed_fields:
+                    if af.lower() == header_lower:
+                        matched_field = af
+                        break
+            else:
+                # Try fuzzy matching: check if header contains allowed field or vice versa
+                for allowed_field in allowed_fields:
+                    allowed_lower = allowed_field.lower()
+                    # Check if header contains key parts of allowed field
+                    if (allowed_lower in header_lower or 
+                        header_lower in allowed_lower or
+                        # Handle common variations (e.g., "RemoteIP" vs "RemoteIPAddress")
+                        (len(allowed_lower) > 5 and allowed_lower[:5] in header_lower)):
+                        matched = True
+                        matched_field = allowed_field
+                        break
+            
+            if matched:
                 authorized_indices.append(idx)
+                matched_fields[idx] = matched_field
             else:
                 unauthorized_fields.append(header_clean)
         
@@ -1042,10 +1125,19 @@ class QwenEnhancer:
         if unauthorized_fields:
             print(f"{Fore.YELLOW}[QWEN_ENHANCER] Filtering out {len(unauthorized_fields)} unauthorized fields: {', '.join(unauthorized_fields[:3])}{'...' if len(unauthorized_fields) > 3 else ''}{Fore.RESET}")
         
-        # If all fields unauthorized, reject
+        # Flexible blocking logic: Allow if table is correctly detected OR if we have some matches
+        # Only block if: no matches AND low detection confidence
         if not authorized_indices:
-            print(f"{Fore.RED}[QWEN_ENHANCER] ⚠️  BLOCKED: No authorized fields in data{Fore.RESET}")
-            return "", False
+            if detection_confidence >= 0.5:
+                # High confidence table detection but no field matches - likely field name variations
+                # Allow with warning (table detection is reliable)
+                print(f"{Fore.YELLOW}[QWEN_ENHANCER] ⚠️  No exact field matches, but table '{table_name}' detected with high confidence ({detection_confidence:.2f}){Fore.RESET}")
+                print(f"{Fore.YELLOW}[QWEN_ENHANCER] Allowing data through - field names may vary from schema{Fore.RESET}")
+                return csv_text, True  # Allow original data
+            else:
+                # Low confidence and no matches - block
+                print(f"{Fore.RED}[QWEN_ENHANCER] ⚠️  BLOCKED: No authorized fields in data and low detection confidence ({detection_confidence:.2f}){Fore.RESET}")
+                return "", False
         
         # Filter CSV to only include authorized fields
         filtered_lines = []
@@ -1056,7 +1148,11 @@ class QwenEnhancer:
         
         filtered_csv = '\n'.join(filtered_lines)
         
-        print(f"{Fore.LIGHTGREEN_EX}[QWEN_ENHANCER] ✓ Validated: {table_name} with {len(authorized_indices)} authorized fields{Fore.RESET}")
+        match_info = f"{len(authorized_indices)}/{len(headers)} fields"
+        if detection_confidence < 1.0:
+            match_info += f" (detection confidence: {detection_confidence:.2f})"
+        
+        print(f"{Fore.LIGHTGREEN_EX}[QWEN_ENHANCER] ✓ Validated: {table_name} with {match_info}{Fore.RESET}")
         return filtered_csv, True
 
     def enhanced_hunt(self, messages, model_name="qwen3:8b", max_lines=50, investigation_context=None):
@@ -1106,12 +1202,13 @@ class QwenEnhancer:
         
         # GUARDRAILS VALIDATION: Validate table and filter fields
         if self.guardrails_enabled:
-            # Detect table if not already known
+            # Detect table if not already known (returns tuple: table_name, confidence)
+            detection_confidence = 1.0  # Default: assume table_name was provided explicitly
             if table_name == "Unknown":
-                table_name = self._detect_table_from_csv(log_data)
+                table_name, detection_confidence = self._detect_table_from_csv(log_data)
             
-            # Validate and filter
-            filtered_log_data, is_valid = self._validate_and_filter_fields(log_data, table_name)
+            # Validate and filter (pass confidence for flexible blocking)
+            filtered_log_data, is_valid = self._validate_and_filter_fields(log_data, table_name, detection_confidence)
             
             if not is_valid:
                 # Data rejected by GUARDRAILS - create violation finding
@@ -1169,8 +1266,8 @@ class QwenEnhancer:
             print(f"{Fore.WHITE}Rule-based detection found {len(rule_findings)} findings. Skipping LLM (fast mode).{Fore.RESET}")
             return {"findings": rule_findings}
         
-        # Enhance prompt with rule findings (smaller payload)
-        enhanced_messages = self._enhance_messages_with_rules(messages, rule_findings, iocs)
+        # Enhance prompt with rule findings (smaller payload) and authority enhancement
+        enhanced_messages = self._enhance_messages_with_rules(messages, rule_findings, iocs, model_name)
         
         # Get LLM analysis with timeout handling
         print(f"{Fore.LIGHTGREEN_EX}Getting LLM analysis from {model_name} (streaming)...{Fore.RESET}")
@@ -1242,6 +1339,9 @@ class QwenEnhancer:
         # Combine and deduplicate findings (threat hunt mode)
         combined_findings = self._combine_findings(rule_findings, llm_findings)
         
+        # Post-process: Boost confidence when evidence is strong (no token cost)
+        combined_findings = self._boost_confidence_if_evidence_strong(combined_findings)
+        
         # Optionally refine with GPT-4/5 for better quality (hybrid mode)
         if self.use_gpt_refinement and self.openai_client and combined_findings:
             combined_findings = self.refine_findings_with_gpt(combined_findings)
@@ -1271,12 +1371,18 @@ class QwenEnhancer:
             print(f"{Fore.YELLOW}Rule-based pattern analysis error: {e}{Fore.RESET}")
             return [], []
 
-    def _enhance_messages_with_rules(self, messages, rule_findings, iocs):
-        """Add rule-based context to LLM messages"""
+    def _enhance_messages_with_rules(self, messages, rule_findings, iocs, model_name="qwen3:8b"):
+        """Add rule-based context to LLM messages and enhance system prompt with authority"""
         enhanced_messages = []
+        has_system_msg = False
         
         for msg in messages:
-            if msg.get("role") == "user" and "Log Data:" in msg.get("content", ""):
+            if msg.get("role") == "system":
+                # Enhance system message with authority header (Qwen has 128K, can afford full enhancement)
+                enhanced_system_msg = self._enhance_system_prompt_authority(msg, model_name)
+                enhanced_messages.append(enhanced_system_msg)
+                has_system_msg = True
+            elif msg.get("role") == "user" and "Log Data:" in msg.get("content", ""):
                 # Add rule-based context to the user message
                 rule_context = self._build_rule_context(rule_findings, iocs)
                 enhanced_content = msg["content"] + f"\n\nRule-based Analysis Results:\n{rule_context}"
@@ -1286,6 +1392,15 @@ class QwenEnhancer:
                 })
             else:
                 enhanced_messages.append(msg)
+        
+        # Add fallback system message if none exists (Qwen can afford full enhancement)
+        if not has_system_msg:
+            fallback_msg = {
+                "role": "system",
+                "content": "You are a Senior SOC Analyst with 10+ years of threat hunting experience. Provide confident, authoritative assessments based on evidence. Take ownership of your findings. Return JSON: {\"findings\": [{\"title\":\"\", \"description\":\"\", \"confidence\":\"\"}]}"
+            }
+            enhanced_messages.insert(0, fallback_msg)
+            print(f"{Fore.YELLOW}[QWEN] ⚠️  No system message found, using full authority fallback{Fore.RESET}")
         
         return enhanced_messages
 
@@ -1306,6 +1421,64 @@ class QwenEnhancer:
         
         context += "\nPlease analyze these findings and provide additional insights."
         return context
+
+    def _enhance_system_prompt_authority(self, system_msg, model_name):
+        """Add authority framing - Qwen uses full version (128K headroom)"""
+        import MODEL_SELECTOR
+        
+        if not MODEL_SELECTOR.AUTHORITY_ENHANCEMENT_ENABLED:
+            return system_msg
+        
+        # Qwen: Full authority header (128K limit - can afford more)
+        if model_name in ["qwen", "qwen3:8b"]:
+            authority_header = """You are a Senior SOC Analyst with 10+ years of threat hunting experience.
+Provide confident, authoritative assessments based on evidence.
+Take ownership of your findings."""
+            # ~30 tokens - full authority framing
+        
+        # GPT-OSS: Ultra-compact (shouldn't reach here, but handle gracefully)
+        elif model_name == "gpt-oss:20b":
+            authority_header = "Senior SOC Analyst. Confident assessments based on evidence."
+            # ~10 tokens - minimal but authoritative
+        
+        else:
+            return system_msg  # Unknown model, skip
+        
+        # Append to existing content (preserve original)
+        original_content = system_msg.get('content', '')
+        enhanced_content = authority_header + "\n\n" + original_content
+        
+        return {"role": "system", "content": enhanced_content}
+
+    def _boost_confidence_if_evidence_strong(self, findings):
+        """Post-process: Boost confidence when evidence supports it"""
+        import MODEL_SELECTOR
+        
+        if not MODEL_SELECTOR.CONFIDENCE_BOOSTING_ENABLED:
+            return findings
+        
+        boosted_count = 0
+        for finding in findings:
+            iocs = finding.get('indicators_of_compromise', [])
+            log_lines = finding.get('log_lines', [])
+            current_confidence = finding.get('confidence', 'Medium')
+            
+            # Strong evidence: 3+ IOCs AND 2+ log lines
+            ioc_count = len(iocs) if isinstance(iocs, list) else 0
+            log_count = len(log_lines) if isinstance(log_lines, list) else 0
+            
+            if ioc_count >= 3 and log_count >= 2:
+                if current_confidence in ['Low', 'Medium']:
+                    finding['confidence'] = 'High'
+                    existing_notes = finding.get('notes', '')
+                    finding['notes'] = (existing_notes + 
+                                      " [Confidence boosted: Strong evidence present]").strip()
+                    boosted_count += 1
+        
+        if boosted_count > 0:
+            print(f"{Fore.LIGHTGREEN_EX}[QWEN] ✓ Boosted confidence for {boosted_count} findings{Fore.RESET}")
+        
+        return findings
 
     def _combine_findings(self, rule_findings, llm_findings):
         """Combine and deduplicate findings from rules and LLM"""

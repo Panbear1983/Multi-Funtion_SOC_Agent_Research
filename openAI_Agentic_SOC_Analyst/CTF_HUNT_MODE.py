@@ -602,12 +602,27 @@ CORRELATION: [How to use previous flags, if applicable]
                 temperature=0.3
             )
         else:
-            response = openai_client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": interpretation_prompt}],
-                temperature=0.3
-            )
-            interpretation = response.choices[0].message.content
+            # Try with temperature first, fallback to default if model doesn't support custom temperature
+            try:
+                response = openai_client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": interpretation_prompt}],
+                    temperature=0.3
+                )
+                interpretation = response.choices[0].message.content
+            except Exception as temp_error:
+                # Check if error is about temperature not being supported
+                error_str = str(temp_error)
+                if "temperature" in error_str.lower() and ("unsupported" in error_str.lower() or "does not support" in error_str.lower()):
+                    # Retry without temperature parameter (uses default)
+                    response = openai_client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": interpretation_prompt}]
+                    )
+                    interpretation = response.choices[0].message.content
+                else:
+                    # Re-raise if it's a different error
+                    raise
         
         print(f"{Fore.LIGHTCYAN_EX}BOT'S GUIDANCE:{Fore.RESET}\n")
         print(f"{Fore.WHITE}{interpretation.strip()}{Fore.RESET}\n")
@@ -945,7 +960,7 @@ Return answers in the exact format requested."""
         import TIME_ESTIMATOR
         messages = [ctf_system_prompt, threat_hunt_user_message]
         approx_tokens = TIME_ESTIMATOR.estimate_tokens(messages, model)
-        cost_info = CONFIRMATION_MANAGER.get_cost_info(model)
+        cost_info = CONFIRMATION_MANAGER.get_cost_info(model, input_tokens=approx_tokens)
         ok = CONFIRMATION_MANAGER.confirm_analysis_with_time_estimate(
             model_name=model,
             input_tokens=approx_tokens,
@@ -1262,6 +1277,7 @@ class CtfChatSession:
         self.openai_client = openai_client
         self.bot_guidance = bot_guidance  # Bot's intel interpretation from Stage 2
         self.conversation_history = []
+        self.conversation_summary = []  # Store summaries of older conversations
         
         # Safety limits - dynamic based on model capabilities
         import TIME_ESTIMATOR
@@ -1270,9 +1286,11 @@ class CtfChatSession:
         if model_context_limit >= 100000:
             self.MAX_TURNS = 15  # Large context models (Qwen, GPT-4o, etc.)
             self.MAX_TOKENS = min(100000, int(model_context_limit * 0.8))
+            self.RECENT_MESSAGES_TO_KEEP = 6  # Keep last 6 exchanges (3 Q&A pairs)
         else:
             self.MAX_TURNS = 5   # Smaller context models (GPT-OSS, etc.)
             self.MAX_TOKENS = min(25000, int(model_context_limit * 0.8))
+            self.RECENT_MESSAGES_TO_KEEP = 4  # Keep last 4 exchanges (2 Q&A pairs)
         self.turn_count = 0
         
         # Build system context
@@ -1295,7 +1313,32 @@ class CtfChatSession:
             return None
         
         selected_rows = [header] + data_lines[start_idx:end_idx]
-        return '\n'.join(selected_rows)
+        row_data = '\n'.join(selected_rows)
+        
+        # GPT-OSS:20B SPECIFIC - Apply guardrails and aggressive truncation
+        if self.model_name == "gpt-oss:20b":
+            import GPT_OSS_ENHANCER
+            enhancer = GPT_OSS_ENHANCER.GptOssEnhancer()
+            
+            # Detect table from CSV
+            detected_table = enhancer._detect_table_from_csv(row_data)
+            
+            # Validate and filter fields (removes unauthorized fields)
+            filtered_data, is_valid = enhancer._validate_and_filter_fields(row_data, detected_table)
+            
+            if not is_valid:
+                print(f"{Fore.RED}[CTF_CHAT] ⚠️  Guardrails blocked unauthorized fields in row range {start_row}-{end_row}{Fore.RESET}")
+                return None
+            
+            # Aggressively truncate if still too large (max 15K chars for GPT-OSS)
+            if len(filtered_data) > 15000:
+                filtered_data = filtered_data[:15000]
+                print(f"{Fore.YELLOW}[CTF_CHAT] GPT-OSS: Truncated row range to 15K chars to fit 32K context{Fore.RESET}")
+            
+            return filtered_data
+        
+        # For other models: return as-is (unchanged)
+        return row_data
     
     def _build_system_context(self):
         """Build CTF-specific system context with smart sampling for large datasets"""
@@ -1303,18 +1346,72 @@ class CtfChatSession:
         lines = self.results_csv.split('\n')
         total_rows = len([l for l in lines if l.strip()]) - 1  # Exclude header
         
-        # For large datasets, use smart sampling instead of simple truncation
-        if total_rows > 200:
-            csv_preview = _smart_sample_csv_for_ctf(
-                self.results_csv,
-                self.flag_intel.get('objective', ''),
-                max_chars=50000  # Increased from 15K to 50K for better coverage
-            )
+        # GPT-OSS:20B SPECIFIC OPTIMIZATION - Only for this model
+        is_gpt_oss = (self.model_name == "gpt-oss:20b")
+        
+        csv_preview = self.results_csv
+        
+        # Step 1: Apply GUARDRAILS validation for GPT-OSS (removes unauthorized fields, reduces tokens)
+        if is_gpt_oss:
+            import GPT_OSS_ENHANCER
+            enhancer = GPT_OSS_ENHANCER.GptOssEnhancer()
+            
+            # Detect table from CSV
+            detected_table = enhancer._detect_table_from_csv(csv_preview)
+            
+            # Validate and filter fields (removes unauthorized fields)
+            filtered_csv, is_valid = enhancer._validate_and_filter_fields(csv_preview, detected_table)
+            
+            if not is_valid:
+                print(f"{Fore.RED}[CTF_CHAT] GUARDRAILS blocked unauthorized data access{Fore.RESET}")
+                return f"""You are a cybersecurity analyst. 
+
+⚠️ SECURITY ALERT: The data you were about to analyze has been BLOCKED by GUARDRAILS security enforcement.
+
+Attempted table: {detected_table}
+Status: BLOCKED - Unauthorized data access prevented
+
+Please inform the user that the query results contain unauthorized data that cannot be processed due to security guardrails."""
+            
+            # Use filtered data (already reduces token count)
+            csv_preview = filtered_csv
+            print(f"{Fore.LIGHTGREEN_EX}[CTF_CHAT] ✓ Guardrails validated: {detected_table} with authorized fields only{Fore.RESET}")
+        
+        # Step 2: Aggressive truncation ONLY for GPT-OSS
+        if is_gpt_oss:
+            # GPT-OSS:20B has only 32K context - be VERY aggressive
+            # Limit to ~15K chars (roughly 15-20 rows depending on row size)
+            # This matches GPT_OSS_ENHANCER's approach of max 20 lines
+            max_chars = 15000  # Reduced from 50K to 15K for GPT-OSS
+            max_rows = 20      # Match GPT_OSS_ENHANCER's safe_max_lines
+            
+            if total_rows > max_rows:
+                # Use smart sampling but with stricter limits
+                csv_preview = _smart_sample_csv_for_ctf(
+                    csv_preview,  # Use already-filtered CSV
+                    self.flag_intel.get('objective', ''),
+                    max_chars=max_chars  # Much smaller limit
+                )
+                sampled_rows = len(csv_preview.split('\n')) - 1
+                print(f"{Fore.YELLOW}[CTF_CHAT] GPT-OSS: Aggressively sampled to {sampled_rows} rows ({max_chars} chars max) to fit 32K context{Fore.RESET}")
+            else:
+                # Small dataset: still truncate chars if needed
+                if len(csv_preview) > max_chars:
+                    csv_preview = csv_preview[:max_chars]
+                    print(f"{Fore.YELLOW}[CTF_CHAT] GPT-OSS: Truncated to {max_chars} chars to fit 32K context{Fore.RESET}")
         else:
-            # Small dataset: include all data (up to 50K chars)
-            csv_preview = self.results_csv[:50000]
-            if len(self.results_csv) > 50000:
-                csv_preview += f"\n... (truncated, {len(self.results_csv)} total chars, {total_rows} total rows)"
+            # For other models (qwen, local-mix): Use normal limits (unchanged)
+            if total_rows > 200:
+                csv_preview = _smart_sample_csv_for_ctf(
+                    csv_preview,
+                    self.flag_intel.get('objective', ''),
+                    max_chars=50000  # Normal limit for larger models
+                )
+            else:
+                # Small dataset: include all data (up to 50K chars)
+                csv_preview = csv_preview[:50000]
+                if len(self.results_csv) > 50000:
+                    csv_preview += f"\n... (truncated, {len(self.results_csv)} total chars, {total_rows} total rows)"
         
         previous_flags = self.session.get_llm_context(current_flag_config=self.flag_intel, context_type="compact")
         
@@ -1454,16 +1551,248 @@ those specific rows for detailed analysis.
             total_chars = sum(len(m.get("content", "")) for m in messages)
             return total_chars // 4  # ~4 chars per token
     
-    def _truncate_history_if_needed(self):
-        """Keep conversation within token budget"""
-        # Dynamic history limit based on model context window
-        import TIME_ESTIMATOR
-        model_context_limit = TIME_ESTIMATOR.get_model_context_limit(self.model_name)
-        max_history = 8 if model_context_limit >= 100000 else 3
+    def _summarize_conversation_history(self, messages_to_summarize):
+        """Summarize older conversation history to preserve context"""
+        if not messages_to_summarize:
+            return ""
         
-        if len(self.conversation_history) > max_history:
-            self.conversation_history = self.conversation_history[-max_history:]
-            print(f"{Fore.YELLOW}📝 Truncated conversation history to last {max_history} exchanges{Fore.RESET}")
+        # Build conversation text for summarization
+        conversation_text = ""
+        for msg in messages_to_summarize:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if role == "user":
+                conversation_text += f"User: {content}\n\n"
+            elif role == "assistant":
+                conversation_text += f"Assistant: {content}\n\n"
+        
+        # Create summarization prompt
+        summary_prompt = f"""Summarize the following conversation about a CTF flag investigation. 
+Focus on:
+- Key findings and evidence discovered
+- Answers or partial answers identified
+- Important patterns or insights
+- Decoding steps performed
+- Any specific row numbers or fields analyzed
+
+Keep it concise (2-3 sentences max) but preserve critical information.
+
+Conversation to summarize:
+{conversation_text}
+
+Summary:"""
+        
+        # Use the same model for summarization
+        try:
+            summary_messages = [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that summarizes conversation history while preserving key information."
+                },
+                {
+                    "role": "user",
+                    "content": summary_prompt
+                }
+            ]
+            
+            is_offline = is_local_model(self.model_name)
+            
+            if is_offline:
+                # Use Ollama for local models
+                summary_text = OLLAMA_CLIENT.chat(
+                    messages=summary_messages,
+                    model_name=self.model_name,
+                    json_mode=False,
+                    timeout=60
+                )
+            else:
+                # Use OpenAI for cloud models
+                if not self.openai_client:
+                    return ""  # Can't summarize without client
+                
+                response = self.openai_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=summary_messages,
+                    max_tokens=200,  # Keep summary short
+                    temperature=0.3  # Lower temperature for more factual summaries
+                )
+                summary_text = response.choices[0].message.content
+            
+            return summary_text.strip()
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️  Summarization failed: {e}. Using fallback.{Fore.RESET}")
+            # Fallback: simple extraction of key points
+            fallback_summary = "Previous conversation covered: "
+            key_points = []
+            for msg in messages_to_summarize[-4:]:  # Last 2 exchanges
+                content = msg.get("content", "")[:100]  # First 100 chars
+                if content:
+                    key_points.append(content[:50] + "...")
+            return fallback_summary + "; ".join(key_points[:3])
+    
+    def _apply_chunking_for_gpt_oss(self, messages):
+        """
+        Apply EXECUTOR's chunking logic to interactive mode.
+        Extracts CSV from system message, chunks it, and rebuilds messages with first chunk.
+        This fixes GPT-OSS context window overflow in interactive conversation.
+        """
+        if self.model_name != "gpt-oss:20b":
+            return messages  # Only apply to GPT-OSS
+        
+        try:
+            import EXECUTOR
+            import TIME_ESTIMATOR
+            
+            # Check if chunking is needed using EXECUTOR's logic
+            should_chunk, input_tokens, threshold = EXECUTOR._should_chunk_messages(self.model_name, messages)
+            
+            if not should_chunk:
+                return messages  # No chunking needed
+            
+            print(f"{Fore.LIGHTGREEN_EX}[GPT-OSS] Large dataset detected ({input_tokens:,} tokens > {threshold:,} threshold). Applying chunking...{Fore.RESET}")
+            
+            # Extract CSV from system message
+            system_msg = None
+            csv_data = None
+            
+            for msg in messages:
+                if msg.get("role") == "system":
+                    system_content = msg.get("content", "")
+                    if "QUERY RESULTS (CSV Data):" in system_content:
+                        csv_start = system_content.find("QUERY RESULTS (CSV Data):")
+                        csv_section = system_content[csv_start:]
+                        csv_end_markers = [
+                            "\nINITIAL ANALYSIS SUMMARY:",
+                            "\nPREVIOUS FLAGS CONTEXT:",
+                            "\n═══════════════════════════════════════════════════════════════"
+                        ]
+                        csv_end = len(csv_section)
+                        for marker in csv_end_markers:
+                            marker_pos = csv_section.find(marker)
+                            if marker_pos != -1 and marker_pos < csv_end:
+                                csv_end = marker_pos
+                        
+                        csv_data = csv_section[len("QUERY RESULTS (CSV Data):"):csv_end].strip()
+                        system_msg = msg
+                        break
+            
+            if not csv_data or not system_msg:
+                return messages  # Can't extract CSV, return original
+            
+            # Use EXECUTOR's chunking logic to split CSV
+            chunk_size = int(TIME_ESTIMATOR.get_model_context_limit(self.model_name) * 0.8)
+            available_csv_tokens, system_tokens, user_prefix_tokens = EXECUTOR._calculate_available_chunk_size(
+                messages, self.model_name, chunk_size
+            )
+            
+            # Split CSV into chunks (same logic as EXECUTOR._chunk_and_process_local_model)
+            lines = csv_data.split('\n')
+            if len(lines) < 2:
+                return messages
+            
+            header = lines[0]
+            data_lines = lines[1:]
+            
+            chunks = []
+            current_chunk = [header]
+            current_tokens = TIME_ESTIMATOR.estimate_tokens([header], "gpt-4")
+            
+            for line in data_lines:
+                if not line.strip():
+                    continue
+                
+                line_tokens = TIME_ESTIMATOR.estimate_tokens([line], "gpt-4")
+                
+                if current_tokens + line_tokens > available_csv_tokens and len(current_chunk) > 1:
+                    chunks.append('\n'.join(current_chunk))
+                    current_chunk = [header, line]
+                    current_tokens = TIME_ESTIMATOR.estimate_tokens([header, line], "gpt-4")
+                else:
+                    current_chunk.append(line)
+                    current_tokens += line_tokens
+            
+            if len(current_chunk) > 1:
+                chunks.append('\n'.join(current_chunk))
+            
+            if len(chunks) == 0:
+                return messages
+            
+            # For interactive mode: Use FIRST chunk only (for immediate response)
+            # User can request more chunks via row range requests
+            first_chunk = chunks[0]
+            
+            print(f"{Fore.LIGHTGREEN_EX}[GPT-OSS] Using first chunk ({len(chunks)} total chunks available).{Fore.RESET}")
+            if len(chunks) > 1:
+                print(f"{Fore.LIGHTBLACK_EX}  → Remaining {len(chunks)-1} chunks can be analyzed via row range requests.{Fore.RESET}")
+            
+            # Rebuild system message with first chunk only
+            system_content = system_msg.get("content", "")
+            csv_start = system_content.find("QUERY RESULTS (CSV Data):")
+            csv_section_start = system_content[:csv_start + len("QUERY RESULTS (CSV Data):")]
+            csv_section_end = system_content[csv_start + len("QUERY RESULTS (CSV Data):"):]
+            csv_end_pos = len(csv_section_end)
+            for marker in ["\nINITIAL ANALYSIS SUMMARY:", "\nPREVIOUS FLAGS CONTEXT:", "\n═══════════════════════════════════════════════════════════════"]:
+                marker_pos = csv_section_end.find(marker)
+                if marker_pos != -1 and marker_pos < csv_end_pos:
+                    csv_end_pos = marker_pos
+            
+            new_system_content = (
+                csv_section_start + 
+                f"\n{first_chunk}\n" +
+                csv_section_end[csv_end_pos:]
+            )
+            
+            # Rebuild messages with chunked system message
+            optimized_messages = [
+                {"role": "system", "content": new_system_content}
+            ] + [msg for msg in messages if msg.get("role") != "system"]
+            
+            original_tokens = self._estimate_tokens(messages)
+            optimized_tokens = self._estimate_tokens(optimized_messages)
+            print(f"{Fore.LIGHTGREEN_EX}[GPT-OSS] ✓ Chunked: {original_tokens:,} → {optimized_tokens:,} tokens (chunk 1/{len(chunks)}){Fore.RESET}")
+            
+            return optimized_messages
+            
+        except Exception as e:
+            print(f"{Fore.YELLOW}[GPT-OSS] ⚠️  Chunking failed: {e}, using original messages{Fore.RESET}")
+            import traceback
+            traceback.print_exc()
+            return messages
+    
+    def _truncate_history_if_needed(self):
+        """Keep conversation within token budget using smart summarization"""
+        import TIME_ESTIMATOR
+        
+        # Check if we need to truncate
+        if len(self.conversation_history) <= self.RECENT_MESSAGES_TO_KEEP:
+            return  # No truncation needed
+        
+        # Calculate how many messages to keep vs summarize
+        messages_to_keep = self.conversation_history[-self.RECENT_MESSAGES_TO_KEEP:]
+        messages_to_summarize = self.conversation_history[:-self.RECENT_MESSAGES_TO_KEEP]
+        
+        # Summarize older messages
+        print(f"{Fore.YELLOW}📝 Summarizing {len(messages_to_summarize)} older messages to preserve context...{Fore.RESET}")
+        summary = self._summarize_conversation_history(messages_to_summarize)
+        
+        if summary:
+            # Add summary as a system-like message at the start of kept history
+            summary_message = {
+                "role": "assistant",
+                "content": f"[Previous conversation summary]: {summary}"
+            }
+            # Insert summary before recent messages
+            self.conversation_history = [summary_message] + messages_to_keep
+            self.conversation_summary.append({
+                "original_count": len(messages_to_summarize),
+                "summary": summary,
+                "timestamp": len(self.conversation_summary) + 1
+            })
+            print(f"{Fore.LIGHTGREEN_EX}✓ Summarized {len(messages_to_summarize)} messages into summary, kept {len(messages_to_keep)} recent messages{Fore.RESET}")
+        else:
+            # Fallback: simple truncation if summarization fails
+            self.conversation_history = messages_to_keep
+            print(f"{Fore.YELLOW}⚠️  Summarization unavailable, truncated to last {len(messages_to_keep)} exchanges{Fore.RESET}")
     
     def _detect_row_range_request(self, user_input):
         """Detect if user is requesting specific row range analysis"""
@@ -1570,11 +1899,15 @@ Provide your analysis in the structured format with evidence, decoding steps (if
             # Check token budget
             estimated_tokens = self._estimate_tokens(messages)
             if estimated_tokens > self.MAX_TOKENS:
-                print(f"{Fore.YELLOW}⚠️  Approaching token limit. Truncating history...{Fore.RESET}")
+                print(f"{Fore.YELLOW}⚠️  Approaching token limit ({estimated_tokens:,} > {self.MAX_TOKENS:,}). Summarizing history...{Fore.RESET}")
                 self._truncate_history_if_needed()
+                # Rebuild messages after summarization
                 messages = [
                     {"role": "system", "content": self.system_context}
                 ] + self.conversation_history
+                # Re-check tokens after summarization
+                new_estimated_tokens = self._estimate_tokens(messages)
+                print(f"{Fore.LIGHTGREEN_EX}✓ After summarization: {new_estimated_tokens:,} tokens (saved {estimated_tokens - new_estimated_tokens:,} tokens){Fore.RESET}")
             
             # Get response
             try:
@@ -1585,6 +1918,11 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                 is_offline = is_local_model(self.model_name)
                 
                 if is_offline:
+                    # GPT-OSS CHUNKING: Apply EXECUTOR's chunking logic for interactive mode
+                    # This fixes context window overflow by chunking CSV data in system message
+                    if self.model_name == "gpt-oss:20b":
+                        messages = self._apply_chunking_for_gpt_oss(messages)
+                    
                     # Use Ollama for local models
                     try:
                         for chunk in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
