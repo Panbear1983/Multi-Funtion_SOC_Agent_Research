@@ -1,5 +1,6 @@
 # 🖳 Hide Your RDP: Password Spray Leads to Full Compromise (CTF)
-<img width="1536" height="1024" alt="adninistrator -P pass tat rop20A1123" src="https://github.com/user-attachments/assets/759ad1f8-eb9e-45aa-b0fd-e4d8434d7675" />
+<img width="1536" height="1024" alt="adninistrator -P pass tat rop20A1123" src="https://github.com/user-attachments/assets/a1c316b2-55a4-4928-8f39-aa8f83491d6b" />
+
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
