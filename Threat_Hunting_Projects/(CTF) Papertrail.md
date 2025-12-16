@@ -1,5 +1,6 @@
 # 🧾 Papertrail — Insider HR Tamper (CTF)
-<img width="1536" height="1024" alt="AN7BsVD9Q9eVWIKBEH5ItR8O35fyrBLgMyFe8hXdMphBUspIIT-PPe6tvV64ZAC_I0CUdN1lOp50FAOApYIFyoQ3-ZmKwoHDOlw91bbLtRSnxk3IsHv32_FVf_Tm" src="https://github.com/user-attachments/assets/4cc0cf6b-716b-4007-8896-84f050e7bc62" />
+<img width="1536" height="1024" alt="AN7BsVD9Q9eVWIKBEH5ItR8O35fyrBLgMyFe8hXdMphBUspIIT-PPe6tvV64ZAC_I0CUdN1lOp50FAOApYIFyoQ3-ZmKwoHDOlw91bbLtRSnxk3IsHv32_FVf_Tm" src="https://github.com/user-attachments/assets/495af84a-c49c-43b1-ba97-fbcd24a7c7f7" />
+
 
 
 ## 📏 Perimeters
@@ -153,7 +154,7 @@ DeviceFileEvents
 ```
 **Output:** n4thani3l-vm
 **Finding:** The spoofed the legitmate VM `nathan-i3l-vm` with fake VM `n4thani3l-vm`. Filtering file events for PowerShell-driven .xml creation during the specified window surfaced entries consistent with script-generated configs rather than standard HR executables. The earliest such activity points to n4thani3l-vm, identified as the initial foothold host.
-<img width="1153" height="266" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/4cc1e9ec-86e6-4013-ad88-de0d2dd67ff8" />
+<img width="1153" height="266" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/d4af313b-43f4-4478-87a3-2fa859deed06" />
 
 
 ---
@@ -181,7 +182,8 @@ DeviceProcessEvents
 ```
 **Output:** `2025-08-19T03:42:32.9389416Z`  
 **Finding:** The earliest anomalous PowerShell activity appears at 03:42:32Z on Aug 19. Note the concurrent device-name spoofing (n4than-i3l-vm vs. n4thani3l-vm), which complicates host attribution and underscores the need to correlate across multiple telemetry types.  
-<img width="1263" height="451" alt="Pasted Graphic 1" src="https://github.com/user-attachments/assets/83d4614e-a126-4ccd-a66e-b654538483c2" />
+<img width="1263" height="451" alt="Pasted Graphic 1" src="https://github.com/user-attachments/assets/4536e01f-9208-4a2d-9293-837805b7cd83" />
+
 
 ---
 
@@ -206,7 +208,8 @@ DeviceEvents
 ```
 **Output:** `9785001b0dcf755eddb8af294a373c0b87b2498660f724e76c4d53f9c217c7a3`  
 **Finding:** Multiple account-name variants (n4th4n13l, n4th4n-13l, N4th4n13L) appear, indicating alias spoofing during enumeration. The associated SHA256 above ties the activity to a specific process lineage.  
-<img width="1275" height="559" alt="Pasted Graphic 2" src="https://github.com/user-attachments/assets/3cd6046b-9e55-4bf6-9198-e41204b5a0a6" />
+<img width="1275" height="559" alt="Pasted Graphic 2" src="https://github.com/user-attachments/assets/e5cfe945-0218-43c8-a1c5-21b5c88125a1" />
+
 
 ---
 
@@ -232,7 +235,8 @@ DeviceProcessEvents
 ```
 **Output:** `"powershell.exe" net localgroup Administrators`  
 **Finding:** The actor leverages PowerShell to invoke net localgroup Administrators, enumerating local admins and surfacing accounts of interest such as n4th4n13l.  
-<img width="1373" height="573" alt="Pasted Graphic 3" src="https://github.com/user-attachments/assets/9b149480-c4ff-4662-9d68-b2b2f9309853" />
+<img width="1373" height="573" alt="Pasted Graphic 3" src="https://github.com/user-attachments/assets/7cb2e4b1-5023-4ba7-bfc8-db84c5d2e6f3" />
+
 
 ---
 
@@ -257,7 +261,8 @@ DeviceProcessEvents
 ```
 **Output:** `qwinsta.exe`  
 **Finding:** Use of qwinsta.exe confirms active session enumeration consistent with masquerading tactics.  
-<img width="793" height="137" alt="Pasted Graphic 5" src="https://github.com/user-attachments/assets/e519a874-7685-4b1c-8918-af97065afa2e" />
+<img width="793" height="137" alt="Pasted Graphic 5" src="https://github.com/user-attachments/assets/8daed584-ad69-4d32-ae42-d02cad8f9237" />
+
 
 ---
 
@@ -282,7 +287,8 @@ DeviceProcessEvents
 ```
 **Output:** `"powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command Set-MpPreference -DisableRealtimeMonitoring $true; Start-Sleep -Seconds 1; Set-Content -Path "C:\Users\Public\PromotionPayload.ps1" -Value "Write-Host 'Payload Executed'"`  
 **Finding:** The actor bypasses execution policy, disables real-time monitoring, inserts a brief delay, and drops a staged payload to C:\Users\Public\PromotionPayload.ps1.  
-<img width="1713" height="60" alt="Pasted Graphic 6" src="https://github.com/user-attachments/assets/55808a0f-bcdd-48c0-82f3-abf6c235dcae" />
+<img width="1713" height="60" alt="Pasted Graphic 6" src="https://github.com/user-attachments/assets/c046528e-688e-4e9c-9991-2fb0df4fb38b" />
+
 
 ---
 
@@ -307,7 +313,8 @@ DeviceRegistryEvents
 ```
 **Output:** `DisableAntiSpyware`  
 **Finding:** Setting DisableAntiSpyware indicates intentional reduction of Defender coverage beyond runtime toggles.  
-<img width="667" height="141" alt="Timestamp" src="https://github.com/user-attachments/assets/cafec28f-cc4b-478a-a0de-33e5619e7f7f" />
+<img width="667" height="141" alt="Timestamp" src="https://github.com/user-attachments/assets/4edd0c70-fba3-431a-92ad-a8ac89fe4c21" />
+
 
 ---
 
@@ -332,7 +339,8 @@ DeviceProcessEvents
 ```
 **Output:** `HRConfig.json`  
 **Finding:** Activity referencing comsvcs.dll (via rundll32) and HR tooling correlates with artifacts written/read as HRConfig.json, aligning with credential-access tradecraft under business pretext.  
-<img width="1667" height="176" alt="Pasted Graphic 9" src="https://github.com/user-attachments/assets/79e42670-42d0-4176-a248-b99ff1d320a3" />
+<img width="1667" height="176" alt="Pasted Graphic 9" src="https://github.com/user-attachments/assets/a4d1cafa-a9d9-4124-ad33-ba55cad88286" />
+
 
 ---
 
@@ -358,7 +366,8 @@ DeviceProcessEvents
 ```
 **Output:** `"notepad.exe" C:\HRTools\HRConfig.json`  
 **Finding:** notepad.exe opens C:\HRTools\HRConfig.json, indicating on-host review of a sensitive HR-config artifact likely tied to a prior dump.  
-<img width="1684" height="205" alt="Pasted Graphic 10" src="https://github.com/user-attachments/assets/de771923-2c6d-466d-b0a3-f4c1e3056b2b" />
+<img width="1684" height="205" alt="Pasted Graphic 10" src="https://github.com/user-attachments/assets/18b8dc87-3f49-4117-aeff-79103c9b6668" />
+
 
 ---
 
@@ -384,7 +393,8 @@ DeviceNetworkEvents
 ```
 **Output:** `.net`  
 **Finding:** Egress tests target .net destinations (e.g., Azure blob endpoints), aligning with staging to cloud infrastructure.  
-<img width="1524" height="98" alt="Pasted Graphic 11" src="https://github.com/user-attachments/assets/d23632d8-e2ac-4ba0-9e7f-e2fbc2b55db1" />
+<img width="1524" height="98" alt="Pasted Graphic 11" src="https://github.com/user-attachments/assets/7e371dad-1391-4bf2-ab9f-4739b471c7f2" />
+
 
 ---
 
@@ -409,7 +419,9 @@ DeviceNetworkEvents
 | order by Timestamp asc
 ```
 **Output:** `3.234.58.20`  
-**Finding:** The final reconnaissance connection resolves to 3.234.58.20 (e.g., pipedream endpoint), marking the transition toward exfiltration. <img width="1179" height="419" alt="Pasted Graphic 12" src="https://github.com/user-attachments/assets/9f7bb5dc-4803-4f32-9734-87573a11b3a0" />
+**Finding:** The final reconnaissance connection resolves to 3.234.58.20 (e.g., pipedream endpoint), marking the transition toward exfiltration. 
+<img width="1179" height="419" alt="Pasted Graphic 12" src="https://github.com/user-attachments/assets/050bb553-7f67-458a-a8ca-b7bf933fe12c" />
+
 
 ---
 
@@ -435,8 +447,9 @@ DeviceProcessEvents
 ```
 **Output:** `OnboardTracker.ps1`  
 **Finding:** A legacy-themed autorun path references OnboardTracker.ps1, signaling script-based persistence masquerading as HR onboarding automation.  
-<img width="1341" height="81" alt="Pasted Graphic 14" src="https://github.com/user-attachments/assets/961f7d31-2824-473b-926a-c7fbdd3ece4f" />
-<img width="1595" height="104" alt="Pasted Graphic 13" src="https://github.com/user-attachments/assets/c6888895-9cd9-4dca-8a81-e29044abc9a0" />
+<img width="1341" height="81" alt="Pasted Graphic 14" src="https://github.com/user-attachments/assets/2d05c71c-dc5a-4276-b826-294be7e94af8" />
+<img width="1595" height="104" alt="Pasted Graphic 13" src="https://github.com/user-attachments/assets/938038b8-776a-4cfc-a683-bcce026bca89" />
+
 
 ---
 
@@ -462,7 +475,8 @@ DeviceProcessEvents
 ```
 **Output:** `Carlos Tanaka`  
 **Finding:** Personnel entries show disproportionate access to Carlos Tanaka (six instances), distinguishing it from other one-off lookups.  
-<img width="1230" height="345" alt="Pasted Graphic 15" src="https://github.com/user-attachments/assets/a68a1050-8f37-47ff-bcda-648fe32d1ba1" />
+<img width="1230" height="345" alt="Pasted Graphic 15" src="https://github.com/user-attachments/assets/e18120be-7a14-41c9-97da-150498d1ae14" />
+
 
 ---
 
@@ -488,7 +502,8 @@ DeviceFileEvents
 ```
 **Output:** df5e35a8dcecdf1430af7001c58f3e9e9faafa05  
 **Finding:** The earliest promotion-file modification (e.g., PromotionCandidates.csv) yields the SHA1 above, linking manipulation to the broader HR tampering timeline.  
-<img width="1342" height="285" alt="Pasted Graphic 17" src="https://github.com/user-attachments/assets/c134d6b5-577e-4b7e-87dc-6e099fcf420e" />
+<img width="1342" height="285" alt="Pasted Graphic 17" src="https://github.com/user-attachments/assets/1a36372b-bf4d-4fb9-b9e3-f4a85be7b6b5" />
+
 
 ---
 
@@ -515,7 +530,8 @@ DeviceProcessEvents
 ```
 **Output:** `2025-08-19T04:55:48.9660467Z`  
 **Finding:** The first recorded anti-forensics action appears just before 05:00Z on Aug 19, with wevtutil-based log manipulation surfacing in command-line artifacts.  
-<img width="979" height="374" alt="Pasted Graphic 18" src="https://github.com/user-attachments/assets/958668e9-39fc-4201-9e03-cef82c3d9add" />
+<img width="979" height="374" alt="Pasted Graphic 18" src="https://github.com/user-attachments/assets/9c246e1c-376e-475e-95a8-02a6baf34b9e" />
+
 
 ---
 
@@ -541,12 +557,14 @@ DeviceFileEvents
 ```
 **Output:** `2025-08-19T05:08:11.8528871Z`  
 **Finding:** The last associated cleanup targets ConsoleHost_history.txt via PowerShell, aligning with a typical sequence of history and trace deletion immediately prior to exit.  
-<img width="1241" height="451" alt="Pasted Graphic 19" src="https://github.com/user-attachments/assets/c917f306-ba1f-48bb-a9de-04bf9f47cc90" />
+<img width="1241" height="451" alt="Pasted Graphic 19" src="https://github.com/user-attachments/assets/357b2d49-e24a-4dc3-abc5-cdc49b93fd61" />
+
 
 ---
 
 # FINISHED!!
-<img width="495" height="496" alt="Pasted Graphic 20" src="https://github.com/user-attachments/assets/85feae3a-6d55-4e8a-b80c-ac08821b6f2c" />
+<img width="495" height="496" alt="Pasted Graphic 20" src="https://github.com/user-attachments/assets/7c8e42cf-0145-46e2-8fb4-1fdd567b4bbf" />
+
 
 ---
 
