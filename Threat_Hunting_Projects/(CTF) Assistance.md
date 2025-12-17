@@ -6,7 +6,7 @@
 
 ## 📏 Perimeters
 Date Completed: ***2025-10-09***  
-Wingmen (woman) List: **Adetola Kolawole**, Agentic SOC Analyst  
+Wingmen (woman) List: **[Adetola Kolawole](https://github.com/AdetolaKols)**, Agentic SOC Analyst  
 Simulated Environment: `LOG(N) Pacific - Cyber Range 1`  
 Infected Host VM DeviceName contains `gab-intern-vm`  
 Incident Date: ***2025-10-01 to 2025-10-15***  
