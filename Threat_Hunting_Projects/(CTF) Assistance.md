@@ -1,4 +1,5 @@
 # 🖥️ Assistance 💬🧑‍💻
+<img width="1536" height="1024" alt="AN7BsVDn2YDL0rk7vc9U5n08YQj0JT9GxT0S7nlIZTQLFB0NH007yOlpK363GnFwbxyTaKtJLHxEB3-Gs3_D993fRmGUn6_2B47wOGKs8p_9hRbGVVWl0nz1rvWf" src="https://github.com/user-attachments/assets/54299c61-1a9e-4b63-b081-49f3f9415cb1" />
 
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
@@ -174,6 +175,8 @@ DeviceFileEvents
 ```
 **Output:** `gab-intern-vm`  
 **Finding:** The additional puzzle piece lied in the 'intern' for the machine 'DeviceName' field. We are able to see the first device name that popped up with the name containing the word 'intern'.
+<img width="732" height="299" alt="chip-linux p2z1vsc05mlerjev3ck4vo33xd c intemal coudape ne" src="https://github.com/user-attachments/assets/84002c63-03ae-4225-8ed0-84bcd0d814d3" />
+
 
 ---
 
@@ -204,6 +207,7 @@ DeviceProcessEvents
 ```
 **Output:** `-ExecutionPolicy`  
 **Finding:** So the riddle of this flag lies in the understanding of the framing of the question asked. We are looking for the action of the 'parameter' used in the CLI that hacker takes to bypass the security measure using 'powershell.exe'.
+<img width="926" height="283" alt="reCodeGerer" src="https://github.com/user-attachments/assets/6485d19c-9331-44ae-b296-022a0f9b8735" />
 
 ---
 
@@ -233,6 +237,7 @@ DeviceFileEvents
 ```
 **Output:** `DefenderTamperArtifact.lnk`  
 **Finding:** After trying a couple keywords in the flag intel, "tamper" and "artifact" turns out the crucial telltale sign within the File Name field under the "DeviceFileEvents" log.
+<img width="1041" height="102" alt="Pasted Graphic" src="https://github.com/user-attachments/assets/843c4934-419d-4f01-91b7-a093cf118832" />
 
 ---
 
@@ -262,6 +267,7 @@ DeviceProcessEvents
 ```
 **Output:** `"powershell.exe" -NoProfile -Sta -Command "try { Get-Clipboard | Out-Null } catch { }"`  
 **Finding:** At this stage of the infiltration, the hacker utilize LOL resource of the hint "clip" as keyword within the "InitiatingProcessCommandLine" to piggyback the sensitive resource to probe possible vulnerabilities for further lateral movement.
+?"""""""""""""""""""<img width="1034" height="74" alt="Pasted Graphic 1" src="https://github.com/user-attachments/assets/9f2090b9-7d14-42e5-9ebf-e62b23021ac8" />
 
 ---
 
@@ -290,6 +296,7 @@ DeviceProcessEvents
 ```
 **Output:** `2025-10-09T12:51:44.3425653Z`  
 **Finding:** The goal of this flag is to identify the last time stamp of when hacker attempts to gather environment or user information on a host system, without making changes to the system. The intel gives out obvious hint "qwi" within the "FileName" or "ProcessCommandLine" fields. And the result addresses the earlier time stamp from one of the 2 entries.
+<img width="932" height="97" alt="Pasted Graphic 2" src="https://github.com/user-attachments/assets/173a8447-a719-4b60-96c3-02366b29e61c" />
 
 ---
 
@@ -318,6 +325,7 @@ DeviceProcessEvents
 ```
 **Output:** `"cmd.exe" /c wmic logicaldisk get name,freespace,size`  
 **Finding:** The "storage assessment" hint directly correlates with this finding, as the command explicitly retrieves disk metadata (drive letters, free space, size) to map storage surfaces. This is critical for adversaries planning data exfiltration or persistence, aligning perfectly with the flag question's context.
+<img width="947" height="111" alt="ond eve" src="https://github.com/user-attachments/assets/92fea1ee-3dbd-4536-aba7-8780451680d8" />
 
 ---
 
@@ -348,6 +356,7 @@ DeviceProcessEvents
 ```
 **Output:** `RuntimeBroker.exe`  
 **Finding:** `RuntimeBroker.exe` is a legitimate system process in Windows, specifically associated with the Windows Runtime (WinRT) and Universal Windows Platform (UWP) applications. The attacker access "nslookup" to ping to the external networks to test out its connectivity. And we look for 'InitiatingProcessParentFileName' field to see triggering file for the ping command.
+<img width="1192" height="100" alt="Pasted Graphic" src="https://github.com/user-attachments/assets/9f554226-765a-4615-9b33-ad77dbfe082f" />
 
 ---
 
@@ -373,6 +382,7 @@ DeviceProcessEvents
 ```
 **Output:** `2533274790397065`  
 **Finding:** The enumerations are consistently spawned by the same PowerShell process, evidenced by the stable InitiatingProcessUniqueId (2533274790397065). The 'cmd.exe' popping up numerous times but no obfuscation or encoding is present in these commands; they are plain cmd invocations via PowerShell.
+<img width="1251" height="220" alt="Pasted Graphic 1" src="https://github.com/user-attachments/assets/48418c6e-6a4e-41fa-b668-5852b89fd9f5" />
 
 ---
 
@@ -403,6 +413,7 @@ DeviceProcessEvents
 ```
 **Output:** `tasklist.exe`  
 **Finding:** The file name `tasklist.exe` demonstrates a runtime process enumeration event, as it lists all running processes on the target host, providing the attacker with visibility into active applications and services.
+<img width="1074" height="242" alt="Pasted Graphic 2" src="https://github.com/user-attachments/assets/e8260d17-e887-4ceb-9c90-530d388bc110" />
 
 ---
 
@@ -431,6 +442,7 @@ DeviceProcessEvents
 ```
 **Output:** `2025-10-09T12:52:14.3135459Z`  
 **Finding:** The earliest timestamp in the filtered logs corresponds to the first execution of a privilege-checking command (`whoami /groups`), and no obfuscation or hidden data is present at that stage. Grabbing the first time stamp of the outputted log aligns with the hint "who /think" (likely referencing `whoami` commands). No obfuscation or encoding is present in the command lines, and the timestamps are unambiguous.
+<img width="1144" height="269" alt="Pasted Graphic 3" src="https://github.com/user-attachments/assets/1000de0b-02ec-4ba0-aab3-fc24bbb32b02" />
 
 ---
 
@@ -460,6 +472,7 @@ DeviceNetworkEvents
 ```
 **Output:** `www.msftconnecttest.com`  
 **Finding:** PowerShell (InitiatingProcessFileName = powershell.exe, account = g4bri3lintern) performed an outbound HTTP GET to www.msftconnecttest.com (RemoteIP 23.218.218.182, URI = /connecttest.txt) to validate outbound reachability. In the same session/timeframe (see previous Flag 8), tasklist.exe was executed to capture host process state for exfiltration value.
+<img width="984" height="236" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/1965c5d6-124b-4357-8b85-6e9e8c5b13b0" />
 
 ---
 
@@ -487,6 +500,7 @@ DeviceFileEvents
 ```
 **Output:** `C:\Users\Public\ReconArtifacts.zip`  
 **Finding:** We are focusing on the indication of possible artifacts that involves in staging steps to exfiltration of the first folder used to drop in the executable files. And the file name 'ReconArtifacts.zip' is discovered in the 'DeviceFileEvents' log under the 'C:\Users\Public\' directory, which marks the first location hacker used to gather the exfiltration file onto the victim's system.
+<img width="976" height="193" alt="3N00, 125836801 PM" src="https://github.com/user-attachments/assets/455601c9-dd58-4915-9a9a-a22e5afe1111" />
 
 ---
 
@@ -517,6 +531,7 @@ DeviceNetworkEvents
 ```
 **Output:** `100.29.147.161`  
 **Finding:** 'powershell.exe' is a classic tool used both for legitimate admin and attacker (LOLBIN) tasks—commonly in data exfiltration, C2, or upload tests.  '100.29.147.161' is not a Microsoft/Akamai/Cloud-native IP (usually 13.x, 52.x, 23.x, etc.), but an Amazon AWS EC2/Lightsail IP (ASN: Amazon, US). Attackers often spin up ephemeral cloud IPs for receiving exfiltrated data or as drop-points for upload tests. The scenario expects us to ignore "expected noisy" uploaders (like wermgr.exe, which could be triggering a real or simulated fake upload).
+<img width="1217" height="198" alt="Pasted Graphic 6" src="https://github.com/user-attachments/assets/15450e4d-1aea-4a71-8dd4-d9e5b2e48a39" />
 
 ---
 
@@ -543,6 +558,7 @@ DeviceProcessEvents
 ```
 **Output:** `SupportToolUpdater`  
 **Finding:** Due to the logon‑triggered scheduled task the attacker created via 'schtasks.exe' to silently re‑run the malicious 'SupportTool.ps1' script on every user sign‑in, making it the specific re‑execution persistence mechanism in order to persist beyond that single execution with the name 'SupportToolUpdater'.
+<img width="1221" height="156" alt="Pasted Graphic 8" src="https://github.com/user-attachments/assets/d4d22aa5-4b97-45b0-9004-4a5de836f25f" />
 
 ---
 
@@ -604,10 +620,13 @@ DeviceFileEvents
 ```
 **Output:** `SupportChat_log.lnk`  
 **Finding:** SupportChat_log.lnk is the answer because it is the malicious shortcut file the attacker placed and that the user executed, making it the key artifact indicating compromise, and .lnk is the Windows shortcut extension, which stores a link that launches another program, while .txt is a plain text file extension that stores human‑readable text and does not execute code when opened. The '.lnk' shortcut (SupportChat_log.lnk) was created immediately before the text log was created and opened by the same user account, and support-related PowerShell activity followed. The timing, process chain (explorer.exe → notepad.exe → powershell.exe), and plain-text command lines strongly indicate SupportChat_log.lnk is the narrative/explanatory artifact intended to justify the activity.
+<img width="1216" height="242" alt="Pasted Graphic 9" src="https://github.com/user-attachments/assets/ba264b46-cd6e-400b-af77-b77266ff09db" />
 
 
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
+<img width="1024" height="1024" alt="QW5kEk=" src="https://github.com/user-attachments/assets/f3cddee1-1d9d-4613-8952-3d0f6946a2f6" />
+
 
 ## 🔎 Analyst Workflow
 
