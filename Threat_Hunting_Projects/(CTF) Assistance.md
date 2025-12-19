@@ -1,4 +1,8 @@
 # 🖥️ Assistance 💬🧑‍💻
+
+**Sandbox Contributor:** [Cyber Range by Josh Madakor's team](https://www.skool.com/cyber-community)  
+**Hunt Design Master:** [Joshua Balondo](https://github.com/Joshua01X)
+
 <img width="1536" height="1024" alt="AN7BsVDn2YDL0rk7vc9U5n08YQj0JT9GxT0S7nlIZTQLFB0NH007yOlpK363GnFwbxyTaKtJLHxEB3-Gs3_D993fRmGUn6_2B47wOGKs8p_9hRbGVVWl0nz1rvWf" src="https://github.com/user-attachments/assets/54299c61-1a9e-4b63-b081-49f3f9415cb1" />
 
 
