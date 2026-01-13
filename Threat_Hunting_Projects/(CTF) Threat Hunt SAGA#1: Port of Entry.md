@@ -1,5 +1,7 @@
 # 🚪 Threat Hunt SAGA#1: Port of Entry
 
+<img width="740" height="1110" alt="PORT OF ENTRY" src="https://github.com/user-attachments/assets/d6fba696-976b-40c3-93d3-8d5581daca20" />
+
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
 **Hunt Design Master:** Mohammed A  
 **Loyal Wingman (woman):** [Adetola Kolawole](https://github.com/AdetolaKols), Agentic SOC Analyst
@@ -214,6 +216,7 @@ DeviceLogonEvents
 
 **Output:** `88.97.178.12`  
 **Finding:** The logs contain entries with "Source Network Address" fields, which are potential candidates for identifying the source IP of an RDP connection. RDP typically uses port 3389, and network traces often include source IPs in such fields. Among the entries, the IP `88.97.178.12` appears in a log line associated with a user account (`kenji.sato`) and is a public IP address, making it a strong candidate for the source of an RDP connection.
+<img width="1184" height="209" alt="Siiiiit" src="https://github.com/user-attachments/assets/546a6a14-ae7e-4a79-bde0-8eeb74745fe5" />
 
 ---
 
@@ -243,6 +246,8 @@ DeviceLogonEvents
 
 **Output:** `kenji.sato`  
 **Finding:** The query results explicitly show four successful logon events for the account **kenji.sato** from the compromised IP **88.97.178.12** (Flag 1) against the device **azuki-sl**. These logons align with the suspicious external IP identified in Flag 1, indicating the use of compromised credentials for unauthorized access.
+<img width="671" height="162" alt="1197202563618503 PM" src="https://github.com/user-attachments/assets/7131255e-1dcd-4479-82c2-803dac971e6a" />
+
 
 ---
 
@@ -271,6 +276,9 @@ DeviceProcessEvents
 
 **Output:** `ARP.EXE -a`  
 **Finding:** Adversaries and tools often use `arp -a` on Windows as a lightweight discovery step to see what other systems are on the same network, so many labs and detections treat this as a network‑neighbor enumeration action.
+<img width="768" height="189" alt="Pasted Graphic 12" src="https://github.com/user-attachments/assets/86ba6679-5d4d-441b-87d7-8345c89d0521" />
+<img width="769" height="527" alt="System Network Configuration Discovery" src="https://github.com/user-attachments/assets/e3b66bea-7e07-4c38-a83a-9c7a6e90d15c" />
+
 
 ---
 
@@ -300,6 +308,8 @@ DeviceProcessEvents
 
 **Output:** `C:\ProgramData\WindowsCache`  
 **Finding:** The log data indicates that the attackers used **C:\ProgramData\WindowsCache** as the primary staging directory. This directory is frequently referenced in the **FolderPath** and **ProcessCommandLine** fields, hosting malicious binaries (e.g., `mm.exe`, `svchost.exe`) and exfiltrated data (e.g., `export-data.zip`). It is a hidden, system-critical location often used for storing tools and stolen data, aligning with the behavior of malware staging.
+<img width="1205" height="182" alt="Pasted Graphic 14" src="https://github.com/user-attachments/assets/3b06868c-8919-464e-9ff4-3c09400e0103" />
+
 
 ---
 
@@ -328,6 +338,8 @@ DeviceRegistryEvents
 
 **Output:** `3`  
 **Finding:** The query results show three registry modifications to the `Exclusions\Extensions` key, each adding a distinct file extension (.bat, .ps1, .exe). These entries directly correspond to file extensions added to the exclusion list, a common evasion tactic to bypass antivirus scans. 3 distinct file extensions are shown in the log as a result.
+<img width="1181" height="128" alt="Pasted Graphic 16" src="https://github.com/user-attachments/assets/b64ee668-d1d0-4c17-80cf-a225070e30bb" />
+
 
 ---
 
@@ -358,6 +370,8 @@ DeviceRegistryEvents
 
 **Output:** `C:\Users\KENJI~1.SAT\AppData\Local\Temp`  
 **Finding:** The log entries reveal exclusions configured via the Windows Defender registry settings. The `RegistryValueName` field in the third row explicitly lists a path added to the "Paths" exclusion list. This path is a standard temporary directory location (`AppData\Local\Temp`), aligning with the question's context. No encoded or obfuscated data is present in the relevant fields. The exclusion is explicitly documented in the registry, and the folder's role as a temporary storage location is well-established in Windows system design.
+<img width="1256" height="237" alt="Pasted Graphic 17" src="https://github.com/user-attachments/assets/cace6e47-2697-4abb-b6c8-3c6b9cb71d68" />
+
 
 ---
 
@@ -387,6 +401,8 @@ DeviceProcessEvents
 
 **Output:** `certutil.exe`  
 **Finding:** `certutil.exe` is a legitimate Windows utility for certificate management but can be weaponized by attackers to execute malicious code or exfiltrate data. Its misuse often involves leveraging its trusted status to bypass security controls. However, attackers may abuse `certutil.exe` to execute malicious payloads or exfiltrate data by leveraging its ability to run arbitrary commands in certain contexts (e.g., via `certutil -urlfetch` to download and execute payloads). This misuse is a known technique to evade detection, as the tool is trusted by the system.
+<img width="1123" height="102" alt="Pasted Graphic 18" src="https://github.com/user-attachments/assets/8e09d884-e408-4536-8eae-a4ad55d01a59" />
+
 
 ---
 
@@ -416,6 +432,8 @@ DeviceProcessEvents
 
 **Output:** `Windows Update Check`  
 **Finding:** The "DeviceProcessEvents" log entries reveal two `schtasks.exe /create` actions. The first entry creates a task named `"Microsoft\Windows\Security\SecurityHealthService"` with a payload in the Temp directory (Flag 6). The third entry creates a task named `"Windows Update Check"` with a different payload path. Both are suspicious, but the third task name aligns with common attacker patterns (e.g., mimicking legitimate Windows tasks like "Windows Update"). The Log explicitly shows a `schtasks.exe /create` action with a task name matching attacker patterns and correlating with prior IOCs.
+<img width="1183" height="125" alt="Pasted Graphic 19" src="https://github.com/user-attachments/assets/1b397017-a150-4847-aa4c-2f3fd12daf75" />
+
 
 ---
 
@@ -442,6 +460,8 @@ DeviceProcessEvents
 
 **Output:** `C:\ProgramData\WindowsCache\svchost.exe`  
 **Finding:** The `/tr` parameter in the log entry directly specifies the executable path, and the context aligns with persistence mechanisms observed in this flag. `svchost.exe` is a "known legitimate system process", but its presence in a non-standard directory and use as a task trigger suggests "malicious activity" (e.g., a fileless attack or a dropped payload). The task's `/tr` parameter directly maps to `svchost.exe`, making it the "runtime payload" of the persistence mechanism. The non-standard location of `svchost.exe` also further supports its suspicious nature.
+<img width="1209" height="130" alt="Pasted Graphic 20" src="https://github.com/user-attachments/assets/16dbb46b-5c55-41e5-9348-ae7a0a2bec24" />
+
 
 ---
 
@@ -471,6 +491,8 @@ DeviceNetworkEvents
 
 **Output:** `78.141.196.6`  
 **Finding:** The IP `78.141.196.6` is directly linked to downloading a malicious binary (`svchost.exe`) and executing PowerShell commands, which are strong indicators of C2 infrastructure. The exfiltration via Discord webhook from `162.159.135.232` is secondary evidence, but the primary C2 server is the one hosting the malicious payload.
+<img width="1152" height="107" alt="Pasted Graphic 21" src="https://github.com/user-attachments/assets/e7bcf93e-7681-4c17-adfa-76e944fc1584" />
+
 
 ---
 
@@ -498,6 +520,8 @@ DeviceNetworkEvents
 
 **Output:** `443`  
 **Finding:** The IP `78.141.196.6` form the C2 phase is associated with both connections of port "8080", but "port 443" is the "standard port" for HTTPS, which is align with the expected answer in a CTF scenario.
+<img width="906" height="104" alt="Pasted Graphic 22" src="https://github.com/user-attachments/assets/88308a26-f64f-4e7b-a228-da93ae18df8e" />
+
 
 ---
 
@@ -527,6 +551,8 @@ DeviceFileEvents
 
 **Output:** `mm.exe`  
 **Finding:** The query results show multiple files downloaded from the IP `78.141.196.6` (Flag 10) using `certutil.exe`, including `svchost.exe`, `mm.exe`, and `AdobeGC[1].exe`. While `svchost.exe` is a legitimate system process, it is commonly abused in attacks for credential dumping. The filename `mm.exe` (5 characters) fits the 4–6 character criteria and could be a renamed tool. However, the most suspicious file is `svchost.exe`, as it is a known vector for credential theft when executed with malicious parameters. The command line for its download includes the IP and port (8080), aligning with the network context from Flags 10 and 11.
+<img width="966" height="115" alt="Pasted Graphic 23" src="https://github.com/user-attachments/assets/402872a2-a98f-4c7f-b38f-1ed24e7a22d9" />
+
 
 ---
 
@@ -555,6 +581,9 @@ DeviceProcessEvents
 
 **Output:** `sekurlsa::logonpasswords`  
 **Finding:** The query results reveal a process executed by `mm.exe` (Flag 12), which is a known binary associated with "Mimikatz" binary, a credential dumping tool. The `ProcessCommandLine` field contains the string `"privilege::debug sekurlsa::logonpasswords exit"`, which aligns with Mimikatz's syntax for module-specific commands. The format `module::command` (e.g., `sekurlsa::logonpasswords`) is a hallmark of Mimikatz's interaction with Windows security subsystems. The `sekurlsa` module is explicitly designed to extract credentials from memory, including logon passwords, making this the direct answer to the flag question.
+<img width="745" height="76" alt="Timedenerated (UTC) T$" src="https://github.com/user-attachments/assets/82ba88e6-936c-43cb-8ff0-368a0cda14f8" />
+
+
 
 ---
 
@@ -584,6 +613,8 @@ DeviceProcessEvents
 
 **Output:** `export-data.zip`  
 **Finding:** The log entry indicates that `curl.exe` is uploading a file named `export-data.zip` to a Discord 'webhook'. The filename is explicitly referenced in the `ProcessCommandLine` field, which includes the full path `C:\ProgramData\WindowsCache\export-data.zip`. This directly aligns with the flag question's requirement to identify a ZIP archive used for data exfiltration. No obfuscation, encoding, or hidden patterns are present in the filename or surrounding fields.
+<img width="996" height="74" alt="Pasted Graphic 26" src="https://github.com/user-attachments/assets/872b72bc-9cd4-4c3e-b0a8-12bb71dfc217" />
+
 
 ---
 
@@ -613,6 +644,8 @@ DeviceNetworkEvents
 
 **Output:** `Discord`  
 **Finding:** The log entries indicate the use of `curl.exe` to upload the file `export-data.zip` to a Discord webhook endpoint (`https://discord.com/api/webhooks/...`). The command explicitly references the file path `C:\ProgramData\WindowsCache\export-data.zip` and uses the `-F` flag to send the file via HTTP POST, which is typical for file uploads. The destination domain (`discord.com`) is a known cloud service with upload capabilities, commonly abused for data exfiltration. No encoded/obfuscated data is present in the `ProcessCommandLine` field, and the pattern across all three rows (identical commands) confirms repeated exfiltration attempts.
+<img width="1206" height="127" alt="Pasted Graphic 27" src="https://github.com/user-attachments/assets/24905d57-5e35-4a49-bdee-a62e97761455" />
+
 
 ---
 
@@ -642,6 +675,8 @@ DeviceProcessEvents
 
 **Output:** `Security`  
 **Finding:** The query results show multiple executions of `wevtutil.exe` with the `cl` (clear log) parameter. The flag question asks for the **first log cleared** by the attacker. The earliest timestamp in the dataset is **2025-11-19 19:11:39**, where `wevtutil.exe cl Security` is executed. This directly clears the **Security** log. Subsequent entries (e.g., `System`, `Application`) occur later, both in time and in the dataset. No obfuscation, encoding, or hidden data is present in the `ProcessCommandLine` fields. The attacker's first action using `wevtutil.exe` explicitly targets the **Security** log, aligning with the anti-forensic tactic of erasing audit trails.
+<img width="905" height="267" alt="11182025, 7 31-39 093 PM" src="https://github.com/user-attachments/assets/b8525d2f-854b-46e3-aef4-84247f417749" />
+
 
 ---
 
@@ -671,6 +706,8 @@ DeviceProcessEvents
 
 **Output:** `support`  
 **Finding:** While `yuki.tanaka` appears in a credential storage command, the question explicitly asks for an **account created** (not a credential stored). The `support` user was explicitly added via `net user` and granted administrative privileges via `net localgroup Administrators`, aligning with the "IMPACT" phase's goal of establishing persistence. The `yuki.tanaka` entry likely relates to lateral movement or credential theft, not account creation.
+<img width="658" height="183" alt="TimeGenerated (UTC" src="https://github.com/user-attachments/assets/e726c4e2-ac81-48e8-8f7c-108c7c3ab45f" />
+
 
 ---
 
@@ -699,6 +736,8 @@ DeviceProcessEvents
 
 **Output:** `wupdate.ps1`  
 **Finding:** The log data reveals multiple PowerShell commands using `Invoke-WebRequest` to download scripts. The first occurrence (Row 0) explicitly downloads a `.ps1` file (`wupdate.ps1`) to a temporary directory (`C:\Users\KENJI~1.SAT\AppData\Local\Temp`). This aligns with the flag question's focus on identifying the **initial attack script** used to automate the attack chain. PowerShell scripts (.ps1) are commonly leveraged by attackers for automation, making this file a strong candidate. Subsequent entries (Rows 1 and 2) download similar files, but the **first download** establishes the **initial entry point**.
+<img width="1216" height="177" alt="Pasted Graphic 29" src="https://github.com/user-attachments/assets/9a7c418d-9940-4ac9-b419-0bcadc7c41b2" />
+
 
 ---
 
@@ -730,6 +769,8 @@ DeviceNetworkEvents
 **Finding:** The flag question focuses on identifying lateral movement targets, which are typically systems with elevated privileges or access to sensitive data. The log data reveals multiple Remote Desktop Protocol (RDP) connections (via `mstsc.exe`) from the local IP `10.1.0.204` to three remote IPs: `10.1.0.108`, `10.1.0.188`, and `10.1.0.108` again. Lateral movement often involves repeated access to a single target, suggesting that the attacker is prioritizing a system with strategic value (e.g., privileged access or data storage).  
 
 The IP `10.1.0.188` appears **twice** in the logs (rows 1 and 2), indicating repeated attempts to access it. This aligns with the pattern of lateral movement, where attackers stabilize access to a target system. Additionally, the use of RDP (`mstsc.exe`) implies the attacker is leveraging remote access tools to exploit credentials or privileges, further supporting the hypothesis that `10.1.0.188` is the primary lateral movement target.
+<img width="978" height="157" alt="1616 204" src="https://github.com/user-attachments/assets/616d35ba-3998-4453-a7e5-7032d0ff6495" />
+
 
 ---
 
@@ -758,6 +799,8 @@ DeviceNetworkEvents
 
 **Output:** `mstsc.exe`  
 **Finding:** The query results explicitly show two instances of `mstsc.exe` being executed with the `/v:10.1.0.188` argument, which is the standard command-line parameter for specifying the remote computer in Microsoft Remote Desktop Protocol (RDP) connections. This directly indicates the use of **RDP** as the remote access tool for lateral movement. The logs align with the context of Flag 19's IP (`10.1.0.188`) and do not show any obfuscation, encoding, or indirect references to other binaries (e.g., `wupdate.ps1`). The `mstsc.exe` process is unambiguously tied to the lateral movement attempt toward the target IP.
+<img width="416" height="159" alt="TimeGenerated  UTC" src="https://github.com/user-attachments/assets/91604f8d-ef82-48a6-a2c9-70ab9a28d758" />
+
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
