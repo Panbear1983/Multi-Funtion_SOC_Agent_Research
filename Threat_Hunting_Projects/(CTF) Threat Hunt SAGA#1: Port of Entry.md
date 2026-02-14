@@ -808,40 +808,42 @@ DeviceNetworkEvents
 
 ### From an investigative standpoint, the workflow progressed as follows:
 
-**1 ➝ 2 🚩:** External RDP connection from `88.97.178.12` authenticated with compromised credentials (`kenji.sato`). Was this the initial entry point?
+**1 🚩:** External RDP access identified the initial entry source; the remote IP was **"88.97.178.12"**.  
 
-**2 ➝ 3 🚩:** After gaining access, did the attacker immediately begin network reconnaissance to map the environment?
+**2 🚩:** The initial compromise used stolen credentials; the account was **"kenji.sato"**.  
 
-**3 ➝ 4 🚩:** Reconnaissance complete, where did the attacker establish their staging area for tools and stolen data?
+**3 🚩:** Early reconnaissance mapped nearby systems; the command was **"ARP.EXE -a"**.  
 
-**4 ➝ 5 🚩:** Before deploying tools, did the attacker disable Windows Defender protections by excluding file extensions?
+**4 🚩:** The attacker created a staging area for tools and data; the directory was **"C:\ProgramData\WindowsCache"**.  
 
-**5 ➝ 6 🚩:** In addition to file extensions, did they exclude a temporary folder path to ensure undetected execution?
+**5 🚩:** Defender was weakened by excluding multiple file types; the number excluded was **"3"**.  
 
-**6 ➝ 7 🚩:** With defenses weakened, which legitimate Windows tool did they abuse to download malicious payloads?
+**6 🚩:** A temporary directory was excluded to avoid scanning; the path was **"C:\Users\KENJI~1.SAT\AppData\Local\Temp"**.  
 
-**7 ➝ 8 🚩:** To ensure persistence, did the attacker create a scheduled task disguised as a legitimate Windows process?
+**7 🚩:** A LOLBin was abused to download payloads; the binary was **"certutil.exe"**.  
 
-**8 ➝ 9 🚩:** What executable was configured to run when the scheduled task triggered?
+**8 🚩:** Persistence was established via a scheduled task; the task name was **"Windows Update Check"**.  
 
-**9 ➝ 10 🚩:** The malicious executable established C2 communication. Which external IP address did it contact?
+**9 🚩:** The scheduled task executed a masqueraded binary; the path was **"C:\ProgramData\WindowsCache\svchost.exe"**.  
 
-**10 ➝ 11 🚩:** C2 communication requires a port. Which standard HTTPS port was used for encrypted command and control?
+**10 🚩:** The malware established C2 to an external host; the IP was **"78.141.196.6"**.  
 
-**11 ➝ 12 🚩:** With C2 established, did the attacker deploy a credential dumping tool to extract authentication secrets?
+**11 🚩:** C2 traffic used a standard encrypted port; the port was **"443"**.  
 
-**12 ➝ 13 🚩:** Which Mimikatz module was used to extract logon passwords from system memory?
+**12 🚩:** Credential dumping was enabled by a renamed tool; the file was **"mm.exe"**.  
 
-**13 ➝ 14 🚩:** After credential theft, did the attacker compress stolen data into an archive for efficient exfiltration?
+**13 🚩:** The Mimikatz module extracted logon secrets; the module was **"sekurlsa::logonpasswords"**.  
 
-**14 ➝ 15 🚩:** Staging complete, which cloud service was used to exfiltrate the stolen data archive?
+**14 🚩:** Stolen data was archived for exfiltration; the filename was **"export-data.zip"**.  
 
-**15 ➝ 16 🚩:** To cover tracks, did the attacker clear event logs, starting with the Security log?
+**15 🚩:** Exfiltration used a cloud service; the platform was **"Discord"**.  
 
-**16 ➝ 17 🚩:** Before concluding, did the attacker create a hidden backdoor account for future access?
+**16 🚩:** Anti‑forensics began with log clearing; the first log cleared was **"Security"**.  
 
-**17 ➝ 18 🚩:** Throughout the attack, was a PowerShell script used to automate the entire attack chain?
+**17 🚩:** A backdoor user was created for persistence; the username was **"support"**.  
 
-**18 ➝ 19 🚩:** With credentials stolen, did the attacker attempt lateral movement to other systems on the network?
+**18 🚩:** The attack chain was automated via PowerShell; the script was **"wupdate.ps1"**.  
 
-**19 ➝ 20 🚩:** Which built-in Windows tool was used to establish remote desktop connections for lateral movement?
+**19 🚩:** Lateral movement targeted another system; the IP was **"10.1.0.188"**.  
+
+**20 🚩:** RDP was used for lateral access; the tool was **"mstsc.exe"**.  
