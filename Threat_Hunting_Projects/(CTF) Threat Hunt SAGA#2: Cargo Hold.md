@@ -4,13 +4,12 @@
 
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
 **Hunt Design Master:** Mohammed A  
-**Loyal Wingman (woman):** [MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)
+**Loyal Wingbot:** [MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## 📏 Perimeters
-Date Completed: ***2026-02-14***  
-Wingmen (woman) List: **[Adetola Kolawole](https://github.com/AdetolaKols)**, Agentic SOC Analyst  
+Date Completed: ***2026-02-14***    
 Simulated Environment: `Cyber Range AZURE LAW`  
 Primary Impacted Host: `AZUKI-FileServer01`  
 Incident Date Range: ***2025-11-19 to 2026-01-13***  
