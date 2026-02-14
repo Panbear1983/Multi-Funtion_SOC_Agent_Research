@@ -4,7 +4,17 @@ A comprehensive collection of Capture The Flag (CTF) threat hunting exercises do
 
 ## 📚 Threat Hunt Reports
 
-### 1. 🚪 [Threat Hunt SAGA#1: Port of Entry](./%28CTF%29%20Threat%20Hunt%20SAGA%231%3A%20Port%20of%20Entry.md)
+### 1. 🚢 [Threat Hunt SAGA#2: Cargo Hold](./%28CTF%29%20Threat%20Hunt%20SAGA%232%3A%20Cargo%20Hold.md)
+**Date Completed:** 2026-02-14  
+**Environment:** Cyber Range AZURE LAW  
+**Focus:** Return access, share discovery, staging, credential dumping, cloud exfiltration  
+**Flags:** 20
+
+A focused intrusion on an Azuki file server featuring RDP pivoting, share enumeration, hidden staging, certutil-based tool transfer, LSASS dumping, and exfiltration to a public file-sharing service.
+
+---
+
+### 2. 🚪 [Threat Hunt SAGA#1: Port of Entry](./%28CTF%29%20Threat%20Hunt%20SAGA%231%3A%20Port%20of%20Entry.md)
 **Date Completed:** 2025-11-20  
 **Environment:** Cyber Range AZURE LAW  
 **Threat Actor:** JADE SPIDER (APT-SL44, SilentLynx)  
@@ -15,7 +25,7 @@ A sophisticated attack chain targeting Azuki Import/Export Trading Co. involving
 
 ---
 
-### 2. 💬 [Assistance](./%28CTF%29%20Assistance.md)
+### 3. 💬 [Assistance](./%28CTF%29%20Assistance.md)
 **Date Completed:** 2025-10-09  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** Remote assistance masquerading, PowerShell abuse, persistence mechanisms  
@@ -25,7 +35,7 @@ An investigation into suspicious remote assistance activity that revealed a comp
 
 ---
 
-### 3. 🥷🏿 [Lurker Re-emerges](./%28CTF%29%20Lurker.md)
+### 4. 🥷🏿 [Lurker Re-emerges](./%28CTF%29%20Lurker.md)
 **Date Completed:** 2025-07-13  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** PowerShell abuse, LOLBins, lateral movement, cloud exfiltration  
@@ -35,7 +45,7 @@ A multi-phase attack starting with PowerShell abuse and LOLBins, escalating to t
 
 ---
 
-### 4. 🖳 [Hide Your RDP: Password Spray Leads to Full Compromise](./%28CTF%29%20RDP%20Password%20Spray.md)
+### 5. 🖳 [Hide Your RDP: Password Spray Leads to Full Compromise](./%28CTF%29%20RDP%20Password%20Spray.md)
 **Date Completed:** 2025-09-08  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** Password spraying, RDP compromise, persistence, data exfiltration  
@@ -45,7 +55,7 @@ A password spray attack against an internet-exposed RDP endpoint leading to full
 
 ---
 
-### 5. 🧾 [Papertrail — Insider HR Tamper](./%28CTF%29%20Papertrail.md)
+### 6. 🧾 [Papertrail — Insider HR Tamper](./%28CTF%29%20Papertrail.md)
 **Date Completed:** 2025-09-08  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** Insider threat, HR data manipulation, credential dumping, anti-forensics  
@@ -79,8 +89,8 @@ These threat hunting exercises cover:
 
 ## 📊 Statistics
 
-- **Total Reports:** 5
-- **Total Flags Captured:** 60+
+- **Total Reports:** 6
+- **Total Flags Captured:** 80+
 - **Attack Scenarios:** External threats, insider threats, APT groups
 - **Techniques Covered:** 50+ MITRE ATT&CK techniques
 
@@ -105,4 +115,4 @@ All reports follow a consistent structure:
 
 ---
 
-**Last Updated:** 2025-11-20
+**Last Updated:** 2026-02-14
