@@ -44,19 +44,40 @@ class HybridEngine:
         self.model_config = self._configure_models(model_config)
         
         # Initialize model adapters
+        # Use QwenModelAdapter (large-context path) for reasoning models with >32K context;
+        # GptOssModelAdapter (slices to 20 lines) only for 32K-constrained models.
+        reasoning_ctx = self.model_config['gpt_oss']['max_tokens']
+        reasoning_adapter = (
+            QwenModelAdapter(self.model_config['gpt_oss'])
+            if reasoning_ctx > 32000
+            else GptOssModelAdapter(self.model_config['gpt_oss'])
+        )
         self.model_adapters = {
             'qwen': QwenModelAdapter(self.model_config['qwen']),
-            'gpt_oss': GptOssModelAdapter(self.model_config['gpt_oss'])
+            'gpt_oss': reasoning_adapter
         }
         
         # Initialize fusion engine
         self.fusion_engine = FusionEngine(self.model_config['fusion'])
         
-        print(f"{Fore.LIGHTCYAN_EX}🔀 Hybrid Engine: {investigation_mode} + {severity_config['name']} + {query_method}{Fore.RESET}")
+        print(f"{Fore.LIGHTCYAN_EX}🔀 Hybrid Engine: {investigation_mode} + {severity_config['name']} + {query_method} [reasoning: {self.model_config['gpt_oss']['model_name']}]{Fore.RESET}")
     
     def _configure_models(self, model_config):
         """Dynamically configure models based on investigation context"""
-        
+
+        # Mode-aware reasoning model routing (current offline library: gemma4:26b + qwen3:8b + gemma4:e4b)
+        reasoning_model = {
+            'threat_hunt': 'gemma4:26b',   # 128K, strongest available — deep analysis
+            'anomaly':     'gemma4:26b',   # 128K, best for volume pattern detection
+            'ctf':         'gemma4:e4b',   # 32K, fast — best for iterative CTF work
+        }.get(self.investigation_mode, 'gemma4:26b')
+
+        # Context window for the reasoning slot (drives field trimming and chunking)
+        reasoning_max_tokens = {
+            'gemma4:26b': 131072,
+            'gemma4:e4b': 32000,
+        }.get(reasoning_model, 32000)
+
         # Base configurations
         base_config = {
             'qwen': {
@@ -67,9 +88,9 @@ class HybridEngine:
                 'role': 'volume_processor'
             },
             'gpt_oss': {
-                'model_name': 'gpt-oss:20b', 
+                'model_name': reasoning_model,
                 'timeout': 240,
-                'max_tokens': 32000,
+                'max_tokens': reasoning_max_tokens,
                 'temperature': 0.1,
                 'role': 'reasoning_processor'
             },
@@ -79,7 +100,17 @@ class HybridEngine:
                 'cross_validation': True
             }
         }
-        
+
+        # gemma4:e4b as fast 3rd-pass validator — only enabled for threat_hunt
+        base_config['validator'] = {
+            'model_name': 'gemma4:e4b',
+            'timeout': 120,
+            'max_tokens': 32000,
+            'temperature': 0.05,
+            'role': 'high_confidence_validator',
+            'enabled': self.investigation_mode == 'threat_hunt',
+        }
+
         # Adapt based on investigation mode
         if self.investigation_mode == 'threat_hunt':
             # Focus on precision and deep analysis
@@ -129,16 +160,16 @@ class HybridEngine:
         # Check if chunked processing is needed based on actual model limits
         input_tokens = self._estimate_input_tokens(messages)
         
-        # Get actual model limits
-        qwen_limit = TIME_ESTIMATOR.get_model_context_limit('qwen3:8b')
-        gpt_oss_limit = TIME_ESTIMATOR.get_model_context_limit('gpt-oss:20b')
-        
-        # Use the smaller limit (GPT-OSS) with safety buffer (80% to be safe)
+        # Get actual model limits (dynamic — uses configured model names)
+        qwen_limit = TIME_ESTIMATOR.get_model_context_limit(self.model_config['qwen']['model_name'])
+        gpt_oss_limit = TIME_ESTIMATOR.get_model_context_limit(self.model_config['gpt_oss']['model_name'])
+
+        # Use the smaller limit with safety buffer (80% to be safe)
         chunking_threshold = int(min(qwen_limit, gpt_oss_limit) * 0.8)
-        
+
         if input_tokens > chunking_threshold:
             print(f"{Fore.LIGHTCYAN_EX}🔀 Large dataset detected ({input_tokens:,} tokens) - Using chunked processing{Fore.RESET}")
-            print(f"{Fore.LIGHTCYAN_EX}   Model limits: Qwen {qwen_limit:,} | GPT-OSS {gpt_oss_limit:,} | Threshold: {chunking_threshold:,}{Fore.RESET}")
+            print(f"{Fore.LIGHTCYAN_EX}   Model limits: Qwen {qwen_limit:,} | {self.model_config['gpt_oss']['model_name']} {gpt_oss_limit:,} | Threshold: {chunking_threshold:,}{Fore.RESET}")
             return self.analyze_chunked(messages, table_name, context)
         
         print(f"\n{Fore.LIGHTYELLOW_EX}{'='*70}")
@@ -175,7 +206,25 @@ class HybridEngine:
         
         # Step 3: Apply severity-based filtering
         final_results = self._apply_severity_filtering(fused_results)
-        
+
+        # Step 4 (optional): gemma4:26b 3rd-pass validation on high-severity findings
+        if self.model_config['validator']['enabled'] and final_results:
+            high_sev = [
+                f for f in final_results
+                if f.get('severity', '').lower() in ('high', 'critical')
+                or f.get('confidence', '').lower() in ('high', 'very high')
+            ]
+            if high_sev:
+                try:
+                    validated = self._validate_with_gemma4(high_sev, messages, table_name)
+                    validated_by_key = {self._get_finding_key(v): v for v in validated}
+                    final_results = [
+                        validated_by_key.get(self._get_finding_key(f), f)
+                        for f in final_results
+                    ]
+                except RuntimeError as e:
+                    print(f"{Fore.YELLOW}[HYBRID] gemma4:26b validator unavailable, skipping: {e}{Fore.RESET}")
+
         print(f"\n{Fore.LIGHTGREEN_EX}✓ Hybrid analysis complete: {len(final_results)} findings{Fore.RESET}")
         return {"findings": final_results}
     
@@ -199,15 +248,15 @@ class HybridEngine:
             return {"findings": []}
         
         # Calculate chunk size based on actual model limits (with safety buffer)
-        qwen_limit = TIME_ESTIMATOR.get_model_context_limit('qwen3:8b')
-        gpt_oss_limit = TIME_ESTIMATOR.get_model_context_limit('gpt-oss:20b')
-        
+        qwen_limit = TIME_ESTIMATOR.get_model_context_limit(self.model_config['qwen']['model_name'])
+        gpt_oss_limit = TIME_ESTIMATOR.get_model_context_limit(self.model_config['gpt_oss']['model_name'])
+
         # Use 80% of the smaller limit for safety
         qwen_chunk_size = int(qwen_limit * 0.8)
         gpt_oss_chunk_size = int(gpt_oss_limit * 0.8)
         chunk_size = min(qwen_chunk_size, gpt_oss_chunk_size)
-        
-        print(f"{Fore.LIGHTBLACK_EX}Chunk size: {chunk_size:,} tokens (based on model limits: Qwen {qwen_limit:,}, GPT-OSS {gpt_oss_limit:,}){Fore.RESET}")
+
+        print(f"{Fore.LIGHTBLACK_EX}Chunk size: {chunk_size:,} tokens (based on model limits: Qwen {qwen_limit:,}, {self.model_config['gpt_oss']['model_name']} {gpt_oss_limit:,}){Fore.RESET}")
         
         # Split into chunks
         chunks = self._split_csv_into_chunks(csv_data, chunk_size)
@@ -439,14 +488,85 @@ class HybridEngine:
             if isinstance(message, dict) and message.get("role") == "user":
                 content = message.get("content", "")
                 if "Log Data:" in content:
-                    # Extract everything after "Log Data:"
                     csv_start = content.find("Log Data:") + len("Log Data:")
                     return content[csv_start:].strip()
                 elif "Analyze these logs:" in content:
-                    # Extract everything after "Analyze these logs:"
                     csv_start = content.find("Analyze these logs:") + len("Analyze these logs:")
                     return content[csv_start:].strip()
         return ""
+
+    def _validate_with_gemma4(self, findings, messages, table_name):
+        """
+        3rd-pass: gemma4:26b re-examines high-severity findings for false-positive reduction.
+        Uses QwenEnhancer's _standard_llm_analysis (large-context path) with gemma4:26b.
+        Returns findings annotated with gemma4_validated and updated confidence.
+        """
+        print(f"{Fore.LIGHTCYAN_EX}  [gemma4] Validating {len(findings)} high-severity finding(s)...{Fore.RESET}")
+
+        finding_summaries = "\n".join(
+            f"- [{i+1}] {f.get('title', 'Unnamed')}: {f.get('description', '')[:200]}"
+            for i, f in enumerate(findings)
+        )
+        csv_snippet = (self._extract_csv_from_messages(messages) or "")[:2000]
+
+        validation_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a senior SOC analyst performing final validation. "
+                    "Respond ONLY with JSON: "
+                    "{\"validations\": [{\"index\": <int>, \"confirmed\": <bool>, "
+                    "\"confidence\": \"<Low|Medium|High|Very High>\", \"note\": \"<brief>\"}]}"
+                )
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Validate these {len(findings)} findings against the log data.\n\n"
+                    f"Findings:\n{finding_summaries}\n\n"
+                    f"Log excerpt:\n{csv_snippet}\n\n"
+                    "Be conservative — only confirm findings directly supported by evidence."
+                )
+            }
+        ]
+
+        ve = QWEN_ENHANCER.QwenEnhancer(
+            severity_multiplier=1.0,
+            openai_client=None,
+            use_gpt_refinement=False
+        )
+        raw = ve._standard_llm_analysis(
+            validation_messages,
+            model_name=self.model_config['validator']['model_name']
+        )
+
+        try:
+            result = json.loads(raw) if isinstance(raw, str) else raw
+            validations = result.get("validations", [])
+        except (json.JSONDecodeError, AttributeError):
+            validations = []
+
+        val_map = {v["index"]: v for v in validations if isinstance(v, dict)}
+        annotated = []
+        for i, finding in enumerate(findings):
+            f = finding.copy()
+            val = val_map.get(i + 1, {})
+            f["gemma4_validated"] = val.get("confirmed", False) if val else False
+            f["gemma4_note"] = val.get("note", "") if val else ""
+            if val and val.get("confirmed") and val.get("confidence"):
+                f["confidence"] = val["confidence"]
+            annotated.append(f)
+
+        confirmed = sum(1 for f in annotated if f.get("gemma4_validated"))
+        print(f"{Fore.LIGHTGREEN_EX}  [gemma4] Confirmed {confirmed}/{len(findings)} findings{Fore.RESET}")
+        return annotated
+
+    def _get_finding_key(self, finding):
+        """Generate a unique key for a finding"""
+        ioc = finding.get('ioc', '')
+        tactic = finding.get('tactic', '')
+        desc = finding.get('description', '')[:100]
+        return "|".join([str(ioc).lower(), str(tactic).lower(), desc.lower()])
 
 
 class QwenModelAdapter:

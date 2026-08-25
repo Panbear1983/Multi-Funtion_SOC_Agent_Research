@@ -10,7 +10,18 @@ imported or maintained.
 import json
 import os
 import glob
+import time
 from datetime import timedelta, datetime
+
+# #region agent log
+_DEBUG_LOG_PATH = "/Users/peter/GitHub/Multi-Funtion_SOC_Agent_Research/openAI_Agentic_SOC_Analyst/.cursor/debug-74b894.log"
+def _dbg(loc, msg, data, hid):
+    try:
+        with open(_DEBUG_LOG_PATH, "a") as _f:
+            _f.write(json.dumps({"sessionId": "74b894", "timestamp": int(time.time() * 1000), "location": loc, "message": msg, "data": data, "hypothesisId": hid}) + "\n")
+    except Exception:
+        pass
+# #endregion
 from color_support import Fore
 import CTF_SESSION_MANAGER
 import GUARDRAILS
@@ -446,21 +457,20 @@ def capture_flag_intel_stage(session):
     print(f"{Fore.LIGHTCYAN_EX}📋 FLAG {session.state['flags_completed'] + 1} INTEL CAPTURE")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}\n")
     
-    print(f"{Fore.WHITE}Paste the flag objective and any hints/intel you have.{Fore.RESET}")
+    print(f"{Fore.WHITE}Paste the flag intel below. End with the exact question to answer.{Fore.RESET}")
     print(f"{Fore.LIGHTBLACK_EX}Include:{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}  • Flag title/question{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}  • Objective (what you're looking for){Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}  • Hints, guidance, MITRE techniques{Fore.RESET}")
-    print(f"{Fore.LIGHTBLACK_EX}  • Expected format{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}  • Flag title")
+    print(f"{Fore.LIGHTBLACK_EX}  • Context, hints, MITRE techniques, expected format")
+    print(f"{Fore.LIGHTBLACK_EX}  • At the end: the exact flag question (e.g. Question: ... or Objective: ...)")
     print(f"{Fore.LIGHTBLACK_EX}Type 'DONE' on a new line when finished{Fore.RESET}\n")
     
     print(f"{Fore.LIGHTCYAN_EX}Example:{Fore.RESET}")
     print(f"{Fore.LIGHTBLACK_EX}{'─'*70}")
     print(f"{Fore.LIGHTBLACK_EX}🚩 Flag 1: Attacker IP Address")
     print(f"{Fore.LIGHTBLACK_EX}MITRE: T1110.001 - Brute Force")
-    print(f"{Fore.LIGHTBLACK_EX}Objective: Find external IP that logged in after brute-force")
     print(f"{Fore.LIGHTBLACK_EX}Hint: Look for failed logins followed by success")
     print(f"{Fore.LIGHTBLACK_EX}Format: xxx.xxx.xxx.xxx")
+    print(f"{Fore.LIGHTBLACK_EX}Question: What was the external IP that successfully logged in after the brute force?")
     print(f"{Fore.LIGHTBLACK_EX}DONE")
     print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}\n")
     
@@ -486,7 +496,12 @@ def capture_flag_intel_stage(session):
     flag_intel = parse_flag_intel(intel_text, session)
     
     print(f"\n{Fore.LIGHTGREEN_EX}✓ Flag intel captured{Fore.RESET}")
-    print(f"{Fore.WHITE}Title: {Fore.LIGHTYELLOW_EX}{flag_intel.get('title', 'Unnamed Flag')}{Fore.RESET}\n")
+    print(f"{Fore.WHITE}Title: {Fore.LIGHTYELLOW_EX}{flag_intel.get('title', 'Unnamed Flag')}{Fore.RESET}")
+    if flag_intel.get('objective'):
+        obj_preview = flag_intel['objective'][:80] + ('...' if len(flag_intel['objective']) > 80 else '')
+        print(f"{Fore.WHITE}Question: {Fore.LIGHTYELLOW_EX}{obj_preview}{Fore.RESET}\n")
+    else:
+        print(f"{Fore.LIGHTBLACK_EX}(No question/objective parsed — add 'Question: ...' or 'Objective: ...' at end of intel){Fore.RESET}\n")
     
     return flag_intel
 
@@ -513,10 +528,12 @@ def parse_flag_intel(intel_text, session):
         if '🚩' in line or 'flag' in line_lower[:20]:
             intel['title'] = line.replace('🚩', '').strip()
         
-        # Extract objective
-        if 'objective:' in line_lower:
+        # Extract objective / question (question at end takes precedence for "answer this")
+        if 'question:' in line_lower:
             intel['objective'] = line.split(':', 1)[1].strip()
-        elif 'find' in line_lower or 'identify' in line_lower or 'determine' in line_lower:
+        elif 'objective:' in line_lower:
+            intel['objective'] = line.split(':', 1)[1].strip()
+        elif 'find' in line_lower or 'identify' in line_lower or 'determine' in line_lower or 'what is' in line_lower or 'what was' in line_lower:
             if not intel['objective']:
                 intel['objective'] = line.strip()
         
@@ -1858,7 +1875,10 @@ Provide your analysis in the structured format with evidence, decoding steps (if
             "role": "user",
             "content": initial_prompt
         })
-        
+        # #region agent log
+        _dbg("CTF_HUNT_MODE.py:chat_loop_start", "chat_loop after initial_prompt", {"model_name": self.model_name, "turn_count": self.turn_count, "history_len": len(self.conversation_history), "has_initial_in_history": True}, "H1")
+        # #endregion
+
         while self.turn_count < self.MAX_TURNS:
             try:
                 user_input = input(f"{Fore.LIGHTGREEN_EX}You: {Fore.RESET}").strip()
@@ -1911,6 +1931,9 @@ Provide your analysis in the structured format with evidence, decoding steps (if
             
             # Get response
             try:
+                # #region agent log
+                _dbg("CTF_HUNT_MODE.py:before_stream", "about to call model", {"model_name": self.model_name, "messages_count": len(messages)}, "H1,H4")
+                # #endregion
                 print(f"{Fore.YELLOW}🤔 {self.model_name} is analyzing... (streaming){Fore.RESET}\n")
                 accum = ""
                 
@@ -1925,8 +1948,18 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                     
                     # Use Ollama for local models
                     try:
+                        first_chunk_logged = False
                         for chunk in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
                             try:
+                                # #region agent log
+                                if not first_chunk_logged:
+                                    try:
+                                        _obj = json.loads(chunk)
+                                        _dbg("CTF_HUNT_MODE.py:first_chunk", "first chunk", {"chunk_preview": str(chunk)[:200], "json_ok": True, "has_message": "message" in _obj, "has_response": "response" in _obj}, "H2")
+                                    except Exception as _e:
+                                        _dbg("CTF_HUNT_MODE.py:first_chunk", "first chunk parse fail", {"chunk_preview": str(chunk)[:200], "json_ok": False, "error": str(_e)}, "H2")
+                                    first_chunk_logged = True
+                                # #endregion
                                 # Parse JSON chunk from Ollama streaming response
                                 obj = json.loads(chunk)
                                 # Extract content from message.content or response field
@@ -1949,9 +1982,17 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                             except Exception:
                                 # Skip malformed chunks silently
                                 continue
+                        # #region agent log
+                        _dbg("CTF_HUNT_MODE.py:after_stream", "stream done", {"accum_len": len(accum), "accum_preview": accum[:150] if accum else ""}, "H2")
+                        # #endregion
                         print("\n")  # Newline after streaming completes
                     except KeyboardInterrupt:
                         print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+                    except Exception as stream_err:
+                        # #region agent log
+                        _dbg("CTF_HUNT_MODE.py:stream_error", "Ollama stream exception", {"error": str(stream_err), "model_name": self.model_name}, "H2,H4")
+                        # #endregion
+                        raise
                 else:
                     # Use OpenAI API for cloud models
                     if not self.openai_client:
@@ -1992,6 +2033,9 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                     print(f"{Fore.YELLOW}⚠️  {self.MAX_TURNS - self.turn_count} turns remaining{Fore.RESET}\n")
                 
             except Exception as e:
+                # #region agent log
+                _dbg("CTF_HUNT_MODE.py:response_error", "Error getting response", {"error": str(e), "error_type": type(e).__name__, "model_name": self.model_name}, "H2,H4")
+                # #endregion
                 print(f"{Fore.RED}Error getting response: {e}{Fore.RESET}")
                 print(f"{Fore.YELLOW}Try rephrasing your question or exit and restart.{Fore.RESET}\n")
                 self.conversation_history.pop()
@@ -2016,8 +2060,12 @@ Provide your analysis in the structured format with evidence, decoding steps (if
     
     def _extract_refined_analysis(self):
         """Extract refined analysis from conversation"""
+        # #region agent log
+        _sa = (self.llm_analysis or {}).get("suggested_answer")
+        _dbg("CTF_HUNT_MODE.py:_extract_refined_analysis", "extract start", {"suggested_answer_before": _sa, "history_len": len(self.conversation_history)}, "H3")
+        # #endregion
         # Start with original analysis
-        refined = self.llm_analysis.copy()
+        refined = (self.llm_analysis or {}).copy()
         
         # Look for answer updates in conversation
         for msg in reversed(self.conversation_history):
@@ -2050,6 +2098,9 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                     insights.append(f"User asked: {msg.get('content', '')[:50]}...")
             refined["conversation_insights"] = insights
         
+        # #region agent log
+        _dbg("CTF_HUNT_MODE.py:_extract_refined_analysis", "extract end", {"suggested_answer_after": refined.get("suggested_answer"), "confidence": refined.get("confidence")}, "H3")
+        # #endregion
         return refined
 
 

@@ -39,7 +39,8 @@ Multi-Funtion_SOC_Agent_Research/
 │
 ├── openAI_Agentic_SOC_Analyst/         # AI-powered SOC analyst
 │   ├── README.md                       # Comprehensive documentation
-│   ├── _main.py                        # Main entry point
+│   ├── start_button.py                 # Main entry point (interactive UI)
+│   ├── _main.py                        # Compatibility launcher (delegates to start_button.py)
 │   ├── THREAT_HUNT_PIPELINE.py         # Targeted threat hunting
 │   ├── ANOMALY_DETECTION_PIPELINE.py   # Automated anomaly detection
 │   ├── CORRELATION_ENGINE.py           # Attack chain correlation
@@ -194,7 +195,7 @@ Multi-Funtion_SOC_Agent_Research/
 ```bash
 cd openAI_Agentic_SOC_Analyst
 pip install -r requirements.txt
-python _main.py
+python3 start_button.py
 ```
 
 See [`openAI_Agentic_SOC_Analyst/README.md`](openAI_Agentic_SOC_Analyst/README.md) for detailed setup.

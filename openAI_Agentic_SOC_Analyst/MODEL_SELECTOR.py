@@ -14,6 +14,14 @@ import tiktoken
 import GUARDRAILS
 import TIME_ESTIMATOR
 
+# Canonical Ollama tag → GUARDRAILS.ALLOWED_MODELS key mapping (single source of truth)
+OLLAMA_TAG_TO_MODEL_KEY = {
+    "qwen3:8b":    "qwen",
+    "gemma4:26b":  "gemma4:26b",
+    "gemma4:e4b":  "gemma4:e4b",
+}
+MODEL_KEY_TO_OLLAMA_TAG = {v: k for k, v in OLLAMA_TAG_TO_MODEL_KEY.items()}
+
 # ═══════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════
@@ -53,18 +61,14 @@ def is_offline_model(model_name):
     if info and info.get('cost_per_million_input', 0) == 0.00:
         return True
     
-    # Check if it's an Ollama model name that maps to an allowed model
-    # (e.g., "qwen3:8b" maps to "qwen", "gpt-oss:20b" maps to itself)
-    ollama_to_allowed_mapping = {
-        "qwen3:8b": "qwen",
-        "gpt-oss:20b": "gpt-oss:20b"
-    }
-    
+    # Check if it's an Ollama tag that maps to an allowed model key
+    ollama_to_allowed_mapping = OLLAMA_TAG_TO_MODEL_KEY
+
     if model_name in ollama_to_allowed_mapping:
         mapped_name = ollama_to_allowed_mapping[model_name]
         info = GUARDRAILS.ALLOWED_MODELS.get(mapped_name, {})
         return info.get('cost_per_million_input', 0) == 0.00
-    
+
     return False
 
 def color_for_usage(used, limit):
@@ -169,9 +173,10 @@ def prompt_model_selection(input_tokens=None):
     print(f"\n{Fore.LIGHTYELLOW_EX}═══ Ollama Models (Local/Offline) - FREE ═══{Fore.RESET}\n")
     
     ollama_models = [
-        ('local-mix', 'Free', 'Auto-Select', '⭐ Smart Mix: GPT-OSS (reasoning) + Qwen (volume) - RECOMMENDED'),
-        ('gpt-oss:20b', 'Free', '32K tokens', '20B params - Manual: Better reasoning'),
-        ('qwen', 'Free', '128K tokens', '8B params - Manual: Fast and high volume')
+        ('local-mix',   'Free', 'Auto-Select', '⭐ Smart Mix: Gemma4:26b (reasoning) + Qwen (volume) + Gemma4:e4b (CTF/validator) - RECOMMENDED'),
+        ('qwen',        'Free', '128K tokens', '8B params - Manual: Fast and high volume'),
+        ('gemma4:26b',  'Free', '128K tokens', '26B params - Manual: Best reasoning (threat hunt / anomaly)'),
+        ('gemma4:e4b',  'Free', '32K tokens',  '4B params - Manual: Fast (CTF / quick triage)'),
     ]
     
     start_idx = len(openai_models) + 1
@@ -218,7 +223,7 @@ def prompt_model_selection(input_tokens=None):
     if is_offline_model(selected_model):
         color = Fore.LIGHTYELLOW_EX
         if selected_model == "local-mix":
-            model_type = "Smart Mix (GPT-OSS + Qwen) - Auto-selects best local model"
+            model_type = "Smart Mix (Gemma4:26b reasoning + Qwen volume + Gemma4:e4b CTF/validator) - Mode-aware routing"
             cost_msg = f"{Fore.LIGHTGREEN_EX}FREE - No API costs • Unlimited tokens{Fore.RESET}"
         else:
             model_type = "Ollama (Local/Offline)"
@@ -227,10 +232,7 @@ def prompt_model_selection(input_tokens=None):
         color = Fore.LIGHTGREEN_EX
         model_type = "OpenAI (Cloud/API)"
         # Map Ollama model names to ALLOWED_MODELS keys if needed
-        ollama_to_allowed_mapping = {
-            "qwen3:8b": "qwen",
-            "gpt-oss:20b": "gpt-oss:20b"
-        }
+        ollama_to_allowed_mapping = OLLAMA_TAG_TO_MODEL_KEY
         lookup_name = ollama_to_allowed_mapping.get(selected_model, selected_model)
         info = GUARDRAILS.ALLOWED_MODELS.get(lookup_name, {})
         if info:

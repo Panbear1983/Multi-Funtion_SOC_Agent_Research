@@ -59,6 +59,45 @@ OPTIMAL_FIELDS_BY_MODEL = {
         "SigninLogs": ALLOWED_TABLES["SigninLogs"],
         "AuditLogs": ALLOWED_TABLES["AuditLogs"],
         "AzureNetworkAnalyticsIPDetails_CL": ALLOWED_TABLES["AzureNetworkAnalyticsIPDetails_CL"],
+    },
+    "mixtral": {
+        # Mixtral 8x7B MoE: 32K context — same trimmed fields as gpt-oss:20b
+        "DeviceProcessEvents": {"TimeGenerated", "AccountName", "DeviceName", "ProcessCommandLine"},
+        "DeviceNetworkEvents": {"TimeGenerated", "DeviceName", "RemoteIP"},
+        "DeviceLogonEvents": {"TimeGenerated", "AccountName", "RemoteIP"},
+        "DeviceFileEvents": {"TimeGenerated", "DeviceName", "FileName", "SHA256"},
+        "DeviceRegistryEvents": {"TimeGenerated", "DeviceName", "RegistryKey"},
+        "AzureNetworkAnalytics_CL": {"TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "VM_s"},
+        "AzureActivity": {"TimeGenerated", "OperationNameValue", "Caller", "CallerIpAddress"},
+        "SigninLogs": {"TimeGenerated", "UserPrincipalName", "IPAddress"},
+        "AuditLogs": {"TimeGenerated", "OperationName", "InitiatedBy"},
+        "AzureNetworkAnalyticsIPDetails_CL": {"TimeGenerated", "IPAddress_s", "ThreatType_s"},
+    },
+    "gemma4:26b": {
+        # Gemma4 26B: 128K context — full fields like qwen
+        "DeviceProcessEvents": ALLOWED_TABLES["DeviceProcessEvents"],
+        "DeviceNetworkEvents": ALLOWED_TABLES["DeviceNetworkEvents"],
+        "DeviceLogonEvents": ALLOWED_TABLES["DeviceLogonEvents"],
+        "DeviceFileEvents": ALLOWED_TABLES["DeviceFileEvents"],
+        "DeviceRegistryEvents": ALLOWED_TABLES["DeviceRegistryEvents"],
+        "AzureNetworkAnalytics_CL": ALLOWED_TABLES["AzureNetworkAnalytics_CL"],
+        "AzureActivity": ALLOWED_TABLES["AzureActivity"],
+        "SigninLogs": ALLOWED_TABLES["SigninLogs"],
+        "AuditLogs": ALLOWED_TABLES["AuditLogs"],
+        "AzureNetworkAnalyticsIPDetails_CL": ALLOWED_TABLES["AzureNetworkAnalyticsIPDetails_CL"],
+    },
+    "gemma4:e4b": {
+        # Gemma4 e4b (efficient 4B): 32K context — trimmed fields for token efficiency
+        "DeviceProcessEvents": {"TimeGenerated", "AccountName", "DeviceName", "ProcessCommandLine"},
+        "DeviceNetworkEvents": {"TimeGenerated", "DeviceName", "RemoteIP"},
+        "DeviceLogonEvents": {"TimeGenerated", "AccountName", "RemoteIP"},
+        "DeviceFileEvents": {"TimeGenerated", "DeviceName", "FileName", "SHA256"},
+        "DeviceRegistryEvents": {"TimeGenerated", "DeviceName", "RegistryKey"},
+        "AzureNetworkAnalytics_CL": {"TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "VM_s"},
+        "AzureActivity": {"TimeGenerated", "OperationNameValue", "Caller", "CallerIpAddress"},
+        "SigninLogs": {"TimeGenerated", "UserPrincipalName", "IPAddress"},
+        "AuditLogs": {"TimeGenerated", "OperationName", "InitiatedBy"},
+        "AzureNetworkAnalyticsIPDetails_CL": {"TimeGenerated", "IPAddress_s", "ThreatType_s"},
     }
 }
 
@@ -88,7 +127,10 @@ ALLOWED_MODELS = {
     "gpt-5":        {"max_input_tokens": 272_000,   "max_output_tokens": 128_000, "cost_per_million_input": 1.25, "cost_per_million_output": 10.00, "tier": {"free": None,   "1": 30_000,  "2": 450_000,   "3": 800_000,   "4": 2_000_000,  "5": 40_000_000}},
     "local-mix":    {"max_input_tokens": 128_000,   "max_output_tokens": 32_768,  "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
     "qwen":         {"max_input_tokens": 128_000,   "max_output_tokens": 32_768,  "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
-    "gpt-oss:20b":  {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}}
+    "gpt-oss:20b":  {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
+    "mixtral":      {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
+    "gemma4:26b":   {"max_input_tokens": 131_072,   "max_output_tokens": 8_192,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
+    "gemma4:e4b":   {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}}
 }
 
 def validate_tables_and_fields(table, fields, model_name=None):

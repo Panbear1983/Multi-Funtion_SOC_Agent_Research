@@ -4,6 +4,9 @@ OPENAI_API_KEY = "your-openai-api-key-here"
 # Azure Sentinel / Log Analytics
 LOG_ANALYTICS_WORKSPACE_ID = "your-workspace-id-here"
 
+# Optional default user filter (used as AzureActivity Caller / AccountName hint)
+DEFAULT_AZURE_CALLER = "Peterwpan1983"
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Microsoft Defender for Endpoint (MDE) - Advanced Hunting API
 # ═══════════════════════════════════════════════════════════════════════════

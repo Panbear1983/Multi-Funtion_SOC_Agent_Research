@@ -38,7 +38,7 @@ An AI-powered Security Operations Center (SOC) analyst that uses Large Language 
 
 ```bash
 # 1. Run the agent
-python _main.py
+python start_button.py
 
 # 2. Select investigation mode
 [1] Threat Hunting  [2] Anomaly Detection  [3] CTF Mode
@@ -100,7 +100,7 @@ Comments: Good detection
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         USER INTERFACE                          │
-│                          (_main.py)                             │
+│                          (start_button.py)                             │
 │                                                                 │
 │  ┌──────────────────┐              ┌──────────────────────┐    │
 │  │ Threat Hunting   │              │ Anomaly Detection    │    │
@@ -225,7 +225,7 @@ Comments: Good detection
 
 ### Core Modules
 
-#### 1. **Main Entry Point** (`_main.py`)
+#### 1. **Main Entry Point** (`start_button.py`)
 - System orchestrator and user interface
 - Pipeline selection (Threat Hunting vs Anomaly Detection vs CTF Mode)
 - Model and severity level configuration
@@ -1083,7 +1083,7 @@ Display & Feedback
 
 ```
 1. User starts analysis
-   python _main.py
+   python start_button.py
    
 2. Select mode & severity
    [1] Threat Hunting [2] Anomaly Detection
@@ -1185,7 +1185,7 @@ az login
 2. **Set Log Analytics Workspace ID:**
 ```python
 # _keys.py
-LOG_ANALYTICS_WORKSPACE_ID = "your-workspace-id"
+LOG_ANALYTICS_WORKSPACE_ID = "Peterwpan1983"
 OPENAI_API_KEY = "your-openai-api-key"
 ```
 
@@ -1207,7 +1207,7 @@ ollama pull gpt-oss:20b
 ### Basic Execution
 
 ```bash
-python _main.py
+python start_button.py
 ```
 
 ### Example: Threat Hunting
@@ -1752,7 +1752,7 @@ CTF Mode is an interactive flag hunting pipeline designed for CTF competitions a
 
 ```bash
 # 1. Run the agent
-python3 _main.py
+python3 start_button.py
 
 # 2. Select CTF Mode
 Select mode [1-4]: 3
@@ -2122,7 +2122,7 @@ az login
 **2. Set Log Analytics Workspace ID:**
 ```python
 # _keys.py
-LOG_ANALYTICS_WORKSPACE_ID = "your-workspace-id"
+LOG_ANALYTICS_WORKSPACE_ID = "Peterwpan1983"
 OPENAI_API_KEY = "your-openai-api-key"
 ```
 
@@ -2149,7 +2149,7 @@ ollama list
 
 **4. Test:**
 ```bash
-python _main.py
+python start_button.py
 # Select model [5] or [6] for local models
 ```
 
@@ -2483,7 +2483,7 @@ Stage 6: What's Next
 ```
 openAI_Agentic_SOC_Analyst/
 │
-├── _main.py                      # Main entry point
+├── start_button.py                      # Main entry point
 ├── _keys.py                      # Configuration & secrets
 │
 ├── EXECUTOR.py                   # Query execution & hunting

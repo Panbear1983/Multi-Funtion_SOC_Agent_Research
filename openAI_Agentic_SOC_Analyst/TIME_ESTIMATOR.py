@@ -65,6 +65,24 @@ class TimeEstimator:
                 'tokens_per_second': 1800,
                 'chunk_overhead': 2,
                 'max_tokens': 128000
+            },
+            'mixtral:latest': {
+                'base_time': 15,
+                'tokens_per_second': 500,
+                'chunk_overhead': 5,
+                'max_tokens': 32000
+            },
+            'gemma4:26b': {
+                'base_time': 10,
+                'tokens_per_second': 800,
+                'chunk_overhead': 3,
+                'max_tokens': 131072
+            },
+            'gemma4:e4b': {
+                'base_time': 4,
+                'tokens_per_second': 1500,
+                'chunk_overhead': 2,
+                'max_tokens': 32000
             }
         }
     

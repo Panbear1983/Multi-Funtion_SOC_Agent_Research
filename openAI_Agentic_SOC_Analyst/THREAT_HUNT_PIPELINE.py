@@ -121,8 +121,16 @@ def get_structured_query_params():
         print(f"{Fore.LIGHTBLACK_EX}Note: If you specify both, query requires BOTH conditions to match{Fore.RESET}\n")
         
         # Get filters
+        import _keys
         device_name = input(f"{Fore.LIGHTGREEN_EX}DeviceName contains (optional, press Enter for all): {Fore.RESET}").strip()
-        account_name = input(f"{Fore.LIGHTGREEN_EX}AccountName contains (optional, press Enter for all): {Fore.RESET}").strip()
+        default_caller = getattr(_keys, "DEFAULT_AZURE_CALLER", "")
+        account_prompt = f"{Fore.LIGHTGREEN_EX}AccountName contains (optional, press Enter for all"
+        if default_caller:
+            account_prompt += f", default: {default_caller}"
+        account_prompt += f"): {Fore.RESET}"
+        account_name = input(account_prompt).strip()
+        if not account_name and default_caller:
+            account_name = default_caller
         
         # Show what will be queried
         print(f"\n{Fore.LIGHTCYAN_EX}Query will search for:{Fore.RESET}")
