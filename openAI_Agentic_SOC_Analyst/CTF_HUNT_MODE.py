@@ -12,6 +12,7 @@ same code path serves every provider and every call is logged.
 
 import json
 import os
+import re
 import glob
 import time
 from datetime import timedelta, datetime
@@ -21,6 +22,7 @@ import CTF_SESSION_MANAGER
 import GUARDRAILS
 import LLM_ROUTER
 import AZURE_SCHEMA_REFERENCE
+import FORM_IMPORT
 import pandas as pd
 
 
@@ -116,7 +118,7 @@ def run_ctf_hunt(openai_client, law_client, workspace_id, timerange_hours, start
                 # Flag already deleted, just continue to hunt it again
                 flag_captured = hunt_single_flag(
                     session, openai_client, law_client, workspace_id,
-                    model, timerange_hours, start_date, end_date, severity_config
+                    timerange_hours, start_date, end_date, model, severity_config
                 )
                 
                 if not flag_captured:
@@ -412,12 +414,109 @@ FINDING (LLM Analysis):
 # STAGE 1: FLAG INTEL CAPTURE (Keep existing)
 # ═══════════════════════════════════════════════════════════════
 
+
+def import_hunt_form_into_session(session, url=None):
+    """
+    Pull every flag from the hunt's Google Form link into the session so no question
+    ever has to be copied by hand. Returns True on success.
+    """
+    if url is None:
+        print(f"\n{Fore.LIGHTCYAN_EX}Paste the hunt's Google Form link (viewform or formResponse), or press Enter to skip:{Fore.RESET}")
+        try:
+            url = input(f"{Fore.LIGHTGREEN_EX}Form link: {Fore.RESET}").strip()
+        except (KeyboardInterrupt, EOFError):
+            url = ""
+    if not url:
+        return False
+    try:
+        hunt = FORM_IMPORT.import_hunt(url)
+    except FORM_IMPORT.FormImportError as e:
+        print(f"{Fore.RED}Import failed: {e}{Fore.RESET}\n")
+        return False
+    session.state['hunt_form'] = {"url": hunt["url"], "title": hunt["title"], "description": hunt["description"],
+                                  "imported_at": hunt["imported_at"]}
+    session.state['flags_planned'] = hunt["flags"]
+    session.state['total_flags'] = len(hunt["flags"])
+    session.save_state()
+    print(f"\n{Fore.LIGHTGREEN_EX}✓ Imported {len(hunt['flags'])} flags from \"{hunt['title']}\"{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}{FORM_IMPORT.summarize(hunt)}{Fore.RESET}\n")
+    return True
+
+
+def _planned_flag_status(session):
+    """(planned flags, set of captured flag numbers)"""
+    planned = session.state.get('flags_planned') or []
+    captured = set()
+    for f in session.state.get('flags_captured', []):
+        try:
+            captured.add(int(str(f.get('flag_number', '')).strip()))
+        except ValueError:
+            pass
+    return planned, captured
+
+
+def _pick_planned_flag(session):
+    """Show the imported flag list and let the analyst choose one (default: next pending)."""
+    planned, captured = _planned_flag_status(session)
+    pending = [f for f in planned if f['number'] not in captured]
+    default = pending[0]['number'] if pending else None
+
+    print(f"{Fore.WHITE}Flags in this hunt ({session.state.get('hunt_form', {}).get('title', '')}):{Fore.RESET}")
+    for f in planned:
+        mark = f"{Fore.LIGHTGREEN_EX}✓" if f['number'] in captured else f"{Fore.LIGHTBLACK_EX}·"
+        q = f.get('question') or f.get('what_to_hunt', '')
+        print(f"  {mark} {Fore.WHITE}{f['number']:>2}. {f['name']}{Fore.LIGHTBLACK_EX}  {q[:60]}{'...' if len(q) > 60 else ''}{Fore.RESET}")
+    print(f"\n{Fore.LIGHTBLACK_EX}Enter a flag number, Enter for flag {default if default else '-'}, or P to paste intel manually{Fore.RESET}")
+    while True:
+        try:
+            choice = input(f"{Fore.LIGHTGREEN_EX}Flag: {Fore.RESET}").strip()
+        except (KeyboardInterrupt, EOFError):
+            return None
+        if choice.upper() == 'P':
+            return 'paste'
+        if not choice:
+            if default is None:
+                print(f"{Fore.YELLOW}All flags are captured. Enter a number to redo one, or P to paste.{Fore.RESET}")
+                continue
+            choice = str(default)
+        if choice.isdigit():
+            n = int(choice)
+            match = next((f for f in planned if f['number'] == n), None)
+            if match:
+                if n in captured:
+                    print(f"{Fore.YELLOW}Flag {n} is already captured - working on it again.{Fore.RESET}")
+                return FORM_IMPORT.flag_to_intel(match, flag_number=n)
+        print(f"{Fore.RED}Enter a valid flag number, or P.{Fore.RESET}")
+
+
 def capture_flag_intel_stage(session):
     """Capture flag objective and intel from user"""
     
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
     print(f"{Fore.LIGHTCYAN_EX}📋 FLAG {session.state['flags_completed'] + 1} INTEL CAPTURE")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}\n")
+
+    # Imported hunt (Google Form): pick the flag instead of pasting it
+    if session.state.get('flags_planned'):
+        picked = _pick_planned_flag(session)
+        if picked is None:
+            print(f"\n{Fore.YELLOW}Cancelled{Fore.RESET}")
+            return None
+        if picked != 'paste':
+            print(f"\n{Fore.LIGHTGREEN_EX}✓ Flag intel loaded from the hunt form{Fore.RESET}")
+            print(f"{Fore.WHITE}Title: {Fore.LIGHTYELLOW_EX}{picked['title']}{Fore.RESET}")
+            print(f"{Fore.WHITE}Question: {Fore.LIGHTYELLOW_EX}{picked['objective']}{Fore.RESET}")
+            if picked.get('format'):
+                print(f"{Fore.WHITE}Format: {Fore.LIGHTYELLOW_EX}{picked['format']}{Fore.RESET}")
+            for i, h in enumerate(picked.get('hints', []), 1):
+                print(f"{Fore.WHITE}Hint {i}: {Fore.LIGHTBLACK_EX}{h}{Fore.RESET}")
+            print()
+            return picked
+    elif not session.state.get('hunt_form_declined'):
+        print(f"{Fore.LIGHTBLACK_EX}Tip: import the whole hunt from its Google Form link once, then just pick flags.{Fore.RESET}")
+        if import_hunt_form_into_session(session):
+            return capture_flag_intel_stage(session)
+        session.state['hunt_form_declined'] = True
     
     print(f"{Fore.WHITE}Paste the flag intel below. End with the exact question to answer.{Fore.RESET}")
     print(f"{Fore.LIGHTBLACK_EX}Include:{Fore.RESET}")
@@ -503,8 +602,8 @@ def parse_flag_intel(intel_text, session):
         if 'mitre' in line_lower or 't1' in line_lower:
             intel['mitre'] = line.strip()
         
-        # Extract hints
-        if 'hint:' in line_lower or 'guidance:' in line_lower:
+        # Extract hints ("Hint:", "Hint 1:", "Guidance:")
+        if re.match(r'^\s*(?:hint\s*\d*|guidance)\s*:', line_lower):
             hint = line.split(':', 1)[1].strip()
             intel['hints'].append(hint)
         
@@ -1973,10 +2072,14 @@ def prompt_next_action(session):
         max_choice = 4
     else:
         max_choice = 3
+    print(f"  {Fore.LIGHTBLUE_EX}[F]{Fore.RESET} 📥 {'Re-import' if session.state.get('flags_planned') else 'Import'} the hunt's flags from a Google Form link\n")
     
     try:
-        choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-{max_choice}]: {Fore.RESET}").strip()
+        choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-{max_choice}/F]: {Fore.RESET}").strip()
         
+        if choice.upper() == 'F':
+            import_hunt_form_into_session(session)
+            return prompt_next_action(session)
         if choice == '1' or not choice:
             return 'new_flag'
         elif choice == '2':
@@ -2128,7 +2231,11 @@ def create_new_session():
     session.state['project_name'] = project_name
     session.state['total_flags'] = None
     session.save_state()
-    
+
+    print(f"{Fore.LIGHTCYAN_EX}Import the hunt from its Google Form link? Every flag, hint and format comes in at once.{Fore.RESET}")
+    if not import_hunt_form_into_session(session):
+        session.state['hunt_form_declined'] = True
+        session.save_state()
     return session
 
 

@@ -183,3 +183,57 @@ def test_refined_analysis_only_uses_explicit_answer_section():
     s.conversation_history = [{"role": "assistant", "content": "I saw 10.0.0.5 in row 3 and beacon.exe in row 4."}]
     refined = s._extract_refined_analysis()
     assert refined["suggested_answer"] == "", "must not grab the first IP from prose"
+
+
+# ── Google Form import (offline fixture = the real Bridge Takeover form) ─────
+
+import FORM_IMPORT
+
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "bridge_takeover_form_data.json")
+
+
+def _hunt():
+    with open(FIXTURE, encoding="utf-8") as f:
+        return FORM_IMPORT.parse_flags(json.load(f))
+
+
+def test_form_url_normalization():
+    u = FORM_IMPORT.normalize_form_url("https://docs.google.com/forms/d/e/1FAIpQLSf5PNshNzWJbp54MlIRONDzf6wpFKlydHF-KN54_NLeX1n7Iw/formResponse")
+    assert u.endswith("/viewform") and "/d/e/1FAIpQLSf5PNshNzWJbp54MlIRONDzf6wpFKlydHF-KN54_NLeX1n7Iw/" in u
+    with pytest.raises(FORM_IMPORT.FormImportError):
+        FORM_IMPORT.normalize_form_url("https://example.com/not-a-form")
+
+
+def test_form_parses_all_25_flags_in_order():
+    h = _hunt()
+    assert h["title"] == "AZUKI-TRADING - BRIDGE TAKEOVER"
+    assert [f["number"] for f in h["flags"]] == list(range(1, 26))
+    assert all(f["question"] for f in h["flags"])
+    assert all(f["entry_id"] for f in h["flags"])
+
+
+def test_form_flag_fields_are_split_correctly():
+    f8 = _hunt()["flags"][7]
+    assert f8["title"] == "FLAG 8: PERSISTENCE - Named Pipe"
+    assert len(f8["hints"]) == 2 and f8["hints"][0].startswith("Query DeviceEvents")
+    assert f8["format"] == "\\Device\\NamedPipe\\pipe-name"
+    assert any("T1090.001" in r for r in f8["references"])
+    assert f8["question"].startswith("Identify the named pipe")
+
+
+def test_flag_to_intel_matches_pasted_intel_shape():
+    intel = FORM_IMPORT.flag_to_intel(_hunt()["flags"][0])
+    for key in ("raw_intel", "flag_number", "title", "objective", "hints", "mitre", "format"):
+        assert key in intel
+    assert intel["flag_number"] == 1
+    assert intel["objective"].startswith("Identify the source IP")
+    assert "Hint 1:" in intel["raw_intel"] and "Question:" in intel["raw_intel"]
+
+
+def test_pasted_intel_parser_accepts_numbered_hints():
+    class S:
+        state = {"flags_completed": 0}
+    intel = CTF_HUNT_MODE.parse_flag_intel("🚩 FLAG 2: X\nHint 1: look here\nHint 2: then there\nFlag Format: username\nQuestion: who?", S())
+    assert intel["hints"] == ["look here", "then there"]
+    assert intel["format"] == "username"
+    assert intel["objective"] == "who?"
