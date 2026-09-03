@@ -7,6 +7,9 @@ from color_support import Fore, Style
 import TIME_ESTIMATOR
 import GUARDRAILS
 
+# Ask before spending more than this on one paid API call; below it, just go.
+ASK_ABOVE_USD = 0.05
+
 
 def confirm_analysis_with_time_estimate(model_name, input_tokens, cost_info, investigation_mode="threat_hunt", severity_config=None):
     """
@@ -21,8 +24,26 @@ def confirm_analysis_with_time_estimate(model_name, input_tokens, cost_info, inv
     
     Returns:
         bool: True if user confirms, False otherwise
+
+    The full confirmation screen only appears when real money is involved (a per-token
+    model and an estimate above ASK_ABOVE_USD). Local and subscription models just print
+    one line - which model, roughly how long - and continue (Peter, 2026-09-03: the screen
+    "could be omitted"; the analyst already said yes to running the analysis one prompt ago).
     """
-    
+    import LLM_ROUTER
+    resolved = LLM_ROUTER.resolve(model_name)
+    cost_value = (cost_info or {}).get('cost')
+    per_token = isinstance(cost_value, (int, float))
+    if not per_token or cost_value < ASK_ABOVE_USD:
+        if input_tokens:
+            est = TIME_ESTIMATOR.estimate_time(resolved, input_tokens)
+            when = TIME_ESTIMATOR.format_time_display(est, input_tokens, resolved)
+        else:
+            when = "unknown"
+        cost_txt = f"${cost_value:.3f}" if per_token else ("free" if LLM_ROUTER.is_local(resolved) else "subscription")
+        print(f"\n{Fore.LIGHTBLACK_EX}Analyzing with {resolved} — about {when}, {cost_txt}. Ctrl+C to cancel.{Fore.RESET}\n")
+        return True
+
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
     print(f"{Fore.LIGHTCYAN_EX}📊 ANALYSIS CONFIRMATION")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}")

@@ -87,3 +87,23 @@ def test_display_gating_never_prints_answer_below_level_3(capsys):
     assert "SECRET-ANSWER" not in out and "Look at command lines" in out
     CTF_HUNT_MODE.display_llm_analysis(analysis, level=3)
     assert "SECRET-ANSWER" in capsys.readouterr().out
+
+
+def test_refined_analysis_ignores_coach_placeholder():
+    s = CTF_HUNT_MODE.CtfChatSession.__new__(CTF_HUNT_MODE.CtfChatSession)
+    s.coach_level = 1
+    s.llm_analysis = {"suggested_answer": "", "confidence": "Low"}
+    s.conversation_history = [{"role": "assistant", "content": "**ANSWER EXTRACTION:**\nwithheld at coach level 1\n\n**CONFIDENCE:**\n[Low]"}]
+    assert s._extract_refined_analysis()["suggested_answer"] == ""
+
+
+def test_documentation_menu_hides_answer_until_revealed(capsys, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda *_: "4")
+    analysis = {"suggested_answer": "SECRET", "confidence": "High", "revealed": False}
+    action = CTF_HUNT_MODE.result_documentation_menu(analysis, model="qwen3:8b")
+    out = capsys.readouterr().out
+    assert action == "switch_model" and "SECRET" not in out and "different model" in out
+    analysis["revealed"] = True
+    monkeypatch.setattr("builtins.input", lambda *_: "3")
+    assert CTF_HUNT_MODE.result_documentation_menu(analysis, model="qwen3:8b") == "use_llm_answer"
+    assert "SECRET" in capsys.readouterr().out
