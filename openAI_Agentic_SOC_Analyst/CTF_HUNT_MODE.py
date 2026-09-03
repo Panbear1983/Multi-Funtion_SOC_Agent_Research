@@ -919,9 +919,20 @@ def llm_result_analysis_stage(results_csv, flag_intel, kql_query, session,
     # Detect the table from the ORIGINAL header (sampling prepends a summary block)
     table_name = _detect_table_from_csv(results_csv)
 
+    # Keep the full result set with the session (gitignored folder) so a flag can be replayed
+    # later against a different model or a fixed prompt - the old sessions only kept pasted rows.
+    original_csv = results_csv
+    try:
+        safe = session._sanitize_filename(session.project_name) if hasattr(session, '_sanitize_filename') else 'session'
+        os.makedirs(getattr(session, 'session_dir', 'ctf_sessions/'), exist_ok=True)
+        with open(os.path.join(getattr(session, 'session_dir', 'ctf_sessions/'),
+                               f"{safe}_flag{flag_intel.get('flag_number', 'x')}_results.csv"), "w", encoding="utf-8") as f:
+            f.write(original_csv)
+    except Exception:
+        pass
+
     # Deterministic evidence pass over the FULL result set (fast, no model): candidate
     # values matching the flag's format/hints, decoded base64, with original row numbers.
-    original_csv = results_csv
     evidence = EVIDENCE_FILTER.extract_candidates(original_csv, flag_intel)
     print(f"{Fore.LIGHTBLACK_EX}Evidence scan: {evidence['total_rows']} rows, looking for {', '.join(evidence['families'])} → "
           f"{len(evidence['candidates'])} candidate value(s){Fore.RESET}")
