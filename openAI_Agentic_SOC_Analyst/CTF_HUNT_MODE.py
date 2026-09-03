@@ -267,10 +267,30 @@ def hunt_single_flag(session, openai_client, law_client, workspace_id,
             severity_config = COMPLIANCE_PROFILES.apply_profile(severity_config, profile_key)
     
     # ═══════════════════════════════════════════════════════════════
+    # HOW TO WORK THIS FLAG - the answer box is available right away (many flags are
+    # answered from the previous flag's results: a decoded command, a URL's domain...)
+    # ═══════════════════════════════════════════════════════════════
+    flush_typeahead()
+    print(f"{Fore.WHITE}How do you want to work Flag {flag_intel.get('flag_number', '?')}?{Fore.RESET}")
+    print(f"  {Fore.LIGHTGREEN_EX}[Enter]{Fore.RESET} AI guidance, then the KQL box")
+    print(f"  {Fore.LIGHTGREEN_EX}[K]{Fore.RESET}     Straight to the KQL box (no AI guidance)")
+    print(f"  {Fore.LIGHTGREEN_EX}[A]{Fore.RESET}     I already have the answer - open the answer box now (no query)")
+    try:
+        how = input(f"{Fore.LIGHTGREEN_EX}Choice: {Fore.RESET}").strip().upper()
+    except (KeyboardInterrupt, EOFError):
+        return False
+    if how == 'A':
+        return document_result_stage(flag_intel, session,
+                                     kql_query="(no new query - answer derived from earlier results)",
+                                     results_csv="", llm_analysis=None)
+
     # STAGE 2: BOT'S INTEL INTERPRETATION (uses selected model)
     # ═══════════════════════════════════════════════════════════════
     
-    bot_guidance = bot_interpretation_stage(flag_intel, session, openai_client, model)
+    if how == 'K':
+        bot_guidance = {'interpretation': '', 'flag_intel': flag_intel}
+    else:
+        bot_guidance = bot_interpretation_stage(flag_intel, session, openai_client, model)
     
     if bot_guidance is None:
         return False
@@ -2162,9 +2182,9 @@ def document_result_stage(flag_intel, session, kql_query, results_csv, llm_analy
             try:
                 df = pd.read_csv(io.StringIO(results_csv))
                 evidence_lines = []
-                for row_idx in evidence_rows:
-                    if 0 <= row_idx < len(df):
-                        evidence_lines.append(df.iloc[row_idx].to_string())
+                for row_idx in evidence_rows:          # RowId is 1-based (original row number)
+                    if isinstance(row_idx, int) and 1 <= row_idx <= len(df):
+                        evidence_lines.append(df.iloc[row_idx - 1].to_string())
                 if evidence_lines:
                     prefill_output = '\n'.join(evidence_lines)
             except:
@@ -2176,6 +2196,7 @@ def document_result_stage(flag_intel, session, kql_query, results_csv, llm_analy
             prefill_notes += f"\n\nConversation Insights:\n" + '\n'.join(llm_analysis.get("conversation_insights", []))
     
     # Get the answer from human (pre-filled if LLM analysis available)
+    flush_typeahead()
     print(f"{Fore.LIGHTGREEN_EX}From the results you reviewed, enter the answer:{Fore.RESET}")
     try:
         if prefill_answer:
