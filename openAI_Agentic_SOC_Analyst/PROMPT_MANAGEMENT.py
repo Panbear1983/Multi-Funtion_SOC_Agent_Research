@@ -34,21 +34,53 @@ logs below:
 CTF_FORMATTING_INSTRUCTIONS = """
 Return CTF analysis in this JSON format:
 {
+  "guidance": "Where to look and what pattern to filter for (fields, conditions, ordering) - NO values",
+  "candidates": [{"value": "candidate value", "row_ids": [12, 40], "why": "one line"}],
   "suggested_answer": "The flag answer value (exact format requested)",
   "confidence": "High | Medium | Low",
-  "evidence_rows": [0, 1, 2],
+  "evidence_rows": [12, 40],
   "evidence_fields": ["RemoteIP", "AccountName", "ProcessCommandLine"],
-  "explanation": "Detailed explanation of why this is the answer, including decoding/parsing steps",
+  "explanation": "Why this is the answer, including decoding/parsing steps",
   "correlation": "How this relates to previous flags (if applicable)"
 }
 
 IMPORTANT:
 - Extract the EXACT answer matching the flag format (e.g., IP address, filename, username)
 - Decode/parse complex fields (base64, hex, obfuscated PowerShell, encoded paths)
-- Provide specific row indexes where evidence appears
+- evidence_rows and candidates[].row_ids are the RowId column values (original row numbers)
 - Explain your reasoning step-by-step
 - If no answer found: {"suggested_answer": "", "confidence": "Low", "explanation": "No matching answer found"}
 """
+
+# Machine-enforced shape for the CTF answer (Ollama `format`, Claude/OpenAI json_schema).
+CTF_ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "guidance": {"type": "string"},
+        "candidates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string"},
+                    "row_ids": {"type": "array", "items": {"type": "integer"}},
+                    "why": {"type": "string"},
+                },
+                "required": ["value", "row_ids", "why"],
+                "additionalProperties": False,
+            },
+        },
+        "suggested_answer": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["High", "Medium", "Low"]},
+        "evidence_rows": {"type": "array", "items": {"type": "integer"}},
+        "evidence_fields": {"type": "array", "items": {"type": "string"}},
+        "explanation": {"type": "string"},
+        "correlation": {"type": "string"},
+    },
+    "required": ["guidance", "candidates", "suggested_answer", "confidence", "evidence_rows",
+                 "evidence_fields", "explanation", "correlation"],
+    "additionalProperties": False,
+}
 
 THREAT_HUNT_PROMPTS = {
 "GeneralThreatHunter": """

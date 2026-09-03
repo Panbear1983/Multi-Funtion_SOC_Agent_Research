@@ -1075,8 +1075,10 @@ class QwenEnhancer:
         if len(lines) < 2:
             return csv_text, True
         
-        headers = lines[0].split(',')
-        allowed_fields = self.allowed_tables[table_name]
+        import csv as _csv, io as _io
+        parsed_rows = list(_csv.reader(_io.StringIO('\n'.join(lines))))
+        headers = parsed_rows[0] if parsed_rows else []
+        allowed_fields = set(self.allowed_tables[table_name]) | {"RowId"}   # RowId = row bookkeeping, never data
         
         # Normalize allowed fields to lowercase for comparison
         allowed_fields_lower = {f.lower() for f in allowed_fields}
@@ -1139,14 +1141,12 @@ class QwenEnhancer:
                 print(f"{Fore.RED}[QWEN_ENHANCER] ⚠️  BLOCKED: No authorized fields in data and low detection confidence ({detection_confidence:.2f}){Fore.RESET}")
                 return "", False
         
-        # Filter CSV to only include authorized fields
-        filtered_lines = []
-        for line in lines:
-            parts = line.split(',')
-            filtered_parts = [parts[i] for i in authorized_indices if i < len(parts)]
-            filtered_lines.append(','.join(filtered_parts))
-        
-        filtered_csv = '\n'.join(filtered_lines)
+        # Filter CSV to only include authorized fields (csv-aware: quoted commas stay intact)
+        out = _io.StringIO()
+        writer = _csv.writer(out, lineterminator='\n')
+        for parts in parsed_rows:
+            writer.writerow([parts[i] for i in authorized_indices if i < len(parts)])
+        filtered_csv = out.getvalue().rstrip('\n')
         
         match_info = f"{len(authorized_indices)}/{len(headers)} fields"
         if detection_confidence < 1.0:
@@ -1200,6 +1200,10 @@ class QwenEnhancer:
             print(f"{Fore.YELLOW}No log data found in messages, using standard LLM analysis")
             return self._standard_llm_analysis(messages, model_name)
         
+        # The sampler prepends "# ..." summary lines for the model; rules and guardrails want pure CSV
+        summary_lines = [l for l in log_data.split('\n') if l.startswith('#')]
+        log_data = '\n'.join(l for l in log_data.split('\n') if not l.startswith('#'))
+
         # GUARDRAILS VALIDATION: Validate table and filter fields
         if self.guardrails_enabled:
             # Detect table if not already known (returns tuple: table_name, confidence)
@@ -1207,8 +1211,15 @@ class QwenEnhancer:
             if table_name == "Unknown":
                 table_name, detection_confidence = self._detect_table_from_csv(log_data)
             
-            # Validate and filter (pass confidence for flexible blocking)
-            filtered_log_data, is_valid = self._validate_and_filter_fields(log_data, table_name, detection_confidence)
+            if is_ctf_mode:
+                # CTF: the analyst wrote the KQL and chose the fields - only the table allowlist applies
+                if table_name != "Unknown" and table_name not in self.allowed_tables:
+                    filtered_log_data, is_valid = "", False
+                else:
+                    filtered_log_data, is_valid = log_data, True
+            else:
+                # Validate and filter (pass confidence for flexible blocking)
+                filtered_log_data, is_valid = self._validate_and_filter_fields(log_data, table_name, detection_confidence)
             
             if not is_valid:
                 # Data rejected by GUARDRAILS - create violation finding
@@ -1257,6 +1268,8 @@ class QwenEnhancer:
             llm_log_data = '\n'.join(log_lines[:max_lines])
         else:
             llm_log_data = log_data
+        if summary_lines:
+            llm_log_data = '\n'.join(summary_lines) + '\n' + llm_log_data
 
         # Apply rule-based analysis (fast, works on all data)
         rule_findings, iocs = self.analyze_logs_with_rules(log_data, table_name)
@@ -1272,8 +1285,9 @@ class QwenEnhancer:
         buffer = ""
         llm_findings = []
         try:
+            schema = (investigation_context or {}).get("json_schema") if is_ctf_mode else None
             buffer = LLM_ROUTER.chat(
-                enhanced_messages, model_name, json_mode=True, temperature=0.1, think=False,
+                enhanced_messages, model_name, json_mode=True, json_schema=schema, temperature=0.1, think=False,
                 purpose="ctf_analysis" if is_ctf_mode else "threat_hunt")
         except KeyboardInterrupt:
             print(f"{Fore.YELLOW}Cancelled by user. Returning rule-based results only.{Fore.RESET}")

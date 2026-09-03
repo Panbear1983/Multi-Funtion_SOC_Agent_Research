@@ -251,7 +251,8 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
         # ── Cloud (OpenAI or Claude) ──
         provider = LLM_ROUTER.provider_of(model)
         print(f"{Fore.LIGHTCYAN_EX}Using {provider} model: {model}...{Fore.RESET}")
-        text = LLM_ROUTER.chat(messages, model, json_mode=True, temperature=0.1,
+        schema = (investigation_context or {}).get("json_schema") if is_ctf else None
+        text = LLM_ROUTER.chat(messages, model, json_mode=True, json_schema=schema, temperature=0.1,
                                purpose="ctf_analysis" if is_ctf else "threat_hunt")
         results = LLM_ROUTER.extract_json(text)
         if is_ctf:

@@ -23,6 +23,8 @@ import GUARDRAILS
 import LLM_ROUTER
 import AZURE_SCHEMA_REFERENCE
 import FORM_IMPORT
+import EVIDENCE_FILTER
+import PROMPT_MANAGEMENT
 import pandas as pd
 
 
@@ -34,6 +36,39 @@ def is_local_model(model_name):
 def get_ollama_model_name(model_name):
     """Map friendly / legacy model names to the canonical registry name"""
     return LLM_ROUTER.resolve(model_name)
+
+
+COACH_LEVELS = {
+    1: "GUIDE   - the AI says where to look and what pattern to filter; it never shows candidate values",
+    2: "NARROW  - the AI also lists a few candidate values with their row numbers, unranked",
+    3: "REVEAL  - the AI shows its best answer with evidence (also reachable per flag with /reveal)",
+}
+
+
+def coach_level(session) -> int:
+    try:
+        return int(session.state.get('coach_level', 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def set_coach_level(session, level: int):
+    session.state['coach_level'] = max(1, min(3, int(level)))
+    session.save_state()
+
+
+def prompt_coach_level(session):
+    """Ask how much help the AI may give (Peter: 'challenging without serving up the answer')."""
+    print(f"\n{Fore.LIGHTCYAN_EX}How much should the AI coach reveal by default?{Fore.RESET}")
+    for n, d in COACH_LEVELS.items():
+        print(f"  {Fore.LIGHTGREEN_EX}[{n}]{Fore.RESET} {d}")
+    print(f"{Fore.LIGHTBLACK_EX}You can always type /hint (one level up) or /reveal in the chat for a single flag.{Fore.RESET}")
+    try:
+        choice = input(f"{Fore.LIGHTGREEN_EX}Coach level [1]: {Fore.RESET}").strip()
+    except (KeyboardInterrupt, EOFError):
+        choice = ""
+    set_coach_level(session, int(choice) if choice in ("1", "2", "3") else 1)
+    print(f"{Fore.LIGHTGREEN_EX}✓ Coach level {coach_level(session)}{Fore.RESET}\n")
 
 
 def run_ctf_hunt(openai_client, law_client, workspace_id, timerange_hours, start_date, end_date,
@@ -874,15 +909,22 @@ def llm_result_analysis_stage(results_csv, flag_intel, kql_query, session,
     # Detect the table from the ORIGINAL header (sampling prepends a summary block)
     table_name = _detect_table_from_csv(results_csv)
 
-    # Fit the data to the model: the local model's practical window is small and slow,
-    # cloud models can take far more. Rows keep their original RowId through sampling.
+    # Deterministic evidence pass over the FULL result set (fast, no model): candidate
+    # values matching the flag's format/hints, decoded base64, with original row numbers.
     original_csv = results_csv
+    evidence = EVIDENCE_FILTER.extract_candidates(original_csv, flag_intel)
+    print(f"{Fore.LIGHTBLACK_EX}Evidence scan: {evidence['total_rows']} rows, looking for {', '.join(evidence['families'])} → "
+          f"{len(evidence['candidates'])} candidate value(s){Fore.RESET}")
+
+    # Fit the data to the model: the local model's practical window is small and slow,
+    # cloud models can take far more. Candidate rows are always included; RowId survives.
     max_chars = _ctf_log_budget_chars(model)
     if len(results_csv) > max_chars or row_count > 100:
         print(f"{Fore.YELLOW}⚠️  {row_count} rows ({len(results_csv):,} chars) - sampling to fit {LLM_ROUTER.resolve(model)} ({max_chars:,} chars max){Fore.RESET}")
-        print(f"{Fore.WHITE}   Strategy: keep rows matching the flag's format/keywords first, then a spread of the rest; RowId = original row number{Fore.RESET}\n")
+        print(f"{Fore.WHITE}   Strategy: candidate rows first, then rows matching the flag's format/keywords, then a spread of the rest; RowId = original row number{Fore.RESET}\n")
         results_csv = _smart_sample_csv_for_ctf(results_csv, flag_intel.get('objective', ''), max_chars=max_chars,
-                                                flag_intel=flag_intel)
+                                                flag_intel=flag_intel,
+                                                priority_row_ids=EVIDENCE_FILTER.candidate_row_ids(evidence))
         sampled_lines = len([l for l in results_csv.split('\n') if l.strip() and not l.startswith('#')]) - 1
         print(f"{Fore.LIGHTGREEN_EX}✓ Sampled {sampled_lines} rows for analysis (from {row_count} total){Fore.RESET}")
         print(f"{Fore.LIGHTBLACK_EX}  Note: If answer not found, use interactive conversation to analyze specific row ranges{Fore.RESET}\n")
@@ -918,11 +960,17 @@ DEEP FIELD ANALYSIS REQUIRED:
 - Decode filename encodings
 - Correlate multiple fields (AccountName + ProcessCommandLine + FolderPath)
 
+{AZURE_SCHEMA_REFERENCE.generate_schema_prompt(table_name) if table_name in AZURE_SCHEMA_REFERENCE.AZURE_TABLE_SCHEMAS else ''}
+
+{EVIDENCE_FILTER.render_for_prompt(evidence, level=3)}
+
 Return the answer with:
-- The exact value/string that is the flag answer
-- Row numbers where evidence appears
+- The exact value/string that is the flag answer (must appear in the log data - never invent one)
+- RowId numbers where evidence appears
 - Brief explanation of why this is the answer
 - Any decoding/parsing steps performed
+- "guidance": where an analyst should look (fields + filter) WITHOUT giving the value away
+- "candidates": up to 3 plausible values with RowIds if the answer is uncertain
 """
     
     # Build threat hunt prompt with CTF formatting
@@ -993,7 +1041,8 @@ Return answers in the exact format requested."""
         'mode': 'ctf',
         'flag_objective': flag_intel['objective'],
         'expected_format': flag_intel.get('format', 'any'),
-        'table_name': table_name
+        'table_name': table_name,
+        'json_schema': PROMPT_MANAGEMENT.CTF_ANSWER_SCHEMA,
     }
     
     # Estimate tokens and get confirmation
@@ -1101,8 +1150,9 @@ Return answers in the exact format requested."""
             "correlation": ""
         }
     
-    # Display LLM analysis
-    display_llm_analysis(llm_analysis)
+    llm_analysis['_evidence'] = evidence
+    llm_analysis['revealed'] = coach_level(session) >= 3
+    display_llm_analysis(llm_analysis, level=coach_level(session), evidence=evidence)
     
     return llm_analysis
 
@@ -1155,7 +1205,7 @@ def _format_family(flag_intel):
     return fams
 
 
-def _smart_sample_csv_for_ctf(csv_data, flag_objective, max_chars=50000, flag_intel=None):
+def _smart_sample_csv_for_ctf(csv_data, flag_objective, max_chars=50000, flag_intel=None, priority_row_ids=None):
     """
     Deterministically sample CSV rows for one CTF analysis call.
 
@@ -1202,6 +1252,8 @@ def _smart_sample_csv_for_ctf(csv_data, flag_objective, max_chars=50000, flag_in
             score += 2
         scored.append((score, idx, line))
 
+    forced = set(priority_row_ids or [])
+    scored = [(score + (100 if idx in forced else 0), idx, line) for score, idx, line in scored]
     priority = [t for t in sorted(scored, key=lambda t: (-t[0], t[1])) if t[0] > 0]
     chosen = {}
     used = len(header) + 6
@@ -1280,49 +1332,65 @@ def _detect_table_from_csv(csv_text):
     return best
 
 
-def display_llm_analysis(llm_analysis):
-    """Display LLM analysis results"""
-    
+def display_llm_analysis(llm_analysis, level=3, evidence=None):
+    """Display the analysis - how much depends on the coach level (1 guide / 2 narrow / 3 reveal)."""
+    import textwrap
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
-    print(f"{Fore.LIGHTCYAN_EX}🤖 LLM ANALYSIS RESULTS")
+    print(f"{Fore.LIGHTCYAN_EX}🤖 AI COACH - LEVEL {level} ({COACH_LEVELS.get(level, '').split(' - ')[0].strip()})")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}\n")
-    
+
     suggested_answer = llm_analysis.get("suggested_answer", "")
     confidence = llm_analysis.get("confidence", "Low")
     evidence_rows = llm_analysis.get("evidence_rows", [])
     evidence_fields = llm_analysis.get("evidence_fields", [])
-    explanation = llm_analysis.get("explanation", "")
-    correlation = llm_analysis.get("correlation", "")
-    
+    guidance = llm_analysis.get("guidance", "")
+
+    if level <= 2:
+        if guidance:
+            print(f"{Fore.LIGHTCYAN_EX}WHERE TO LOOK:{Fore.RESET}")
+            print(f"{Fore.WHITE}{textwrap.fill(guidance, width=70)}{Fore.RESET}\n")
+        if evidence_fields:
+            print(f"{Fore.WHITE}Fields that matter: {Fore.LIGHTYELLOW_EX}{', '.join(evidence_fields)}{Fore.RESET}")
+        if evidence_rows:
+            print(f"{Fore.WHITE}Rows worth a close look: {Fore.LIGHTYELLOW_EX}{evidence_rows}{Fore.RESET}")
+        if evidence:
+            print(f"\n{Fore.WHITE}{EVIDENCE_FILTER.render_for_human(evidence, level)}{Fore.RESET}")
+        status = "has a candidate answer" if suggested_answer else "did not settle on an answer"
+        print(f"\n{Fore.LIGHTBLACK_EX}The AI {status} ({confidence} confidence). Type /hint for more, or /reveal in the chat to see it.{Fore.RESET}\n")
+        return
+
     if suggested_answer:
         print(f"{Fore.LIGHTGREEN_EX}SUGGESTED ANSWER: {Fore.LIGHTYELLOW_EX}{suggested_answer}{Fore.RESET}")
         print(f"{Fore.WHITE}CONFIDENCE: {Fore.LIGHTYELLOW_EX}{confidence}{Fore.RESET}\n")
     else:
         print(f"{Fore.YELLOW}SUGGESTED ANSWER: {Fore.RED}None found{Fore.RESET}")
         print(f"{Fore.WHITE}CONFIDENCE: {Fore.LIGHTYELLOW_EX}{confidence}{Fore.RESET}\n")
-    
+    cands = llm_analysis.get("candidates") or []
+    if cands:
+        print(f"{Fore.LIGHTCYAN_EX}OTHER CANDIDATES:{Fore.RESET}")
+        for c in cands[:5]:
+            if isinstance(c, dict):
+                print(f"  • {Fore.LIGHTYELLOW_EX}{c.get('value', '')}{Fore.RESET}  rows {c.get('row_ids', [])}  {Fore.LIGHTBLACK_EX}{c.get('why', '')}{Fore.RESET}")
+        print()
     if evidence_rows:
         print(f"{Fore.LIGHTCYAN_EX}EVIDENCE:{Fore.RESET}")
         print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}")
-        print(f"{Fore.WHITE}Evidence Rows: {Fore.LIGHTYELLOW_EX}{evidence_rows}{Fore.RESET}")
+        print(f"{Fore.WHITE}Evidence Rows (RowId): {Fore.LIGHTYELLOW_EX}{evidence_rows}{Fore.RESET}")
         if evidence_fields:
             print(f"{Fore.WHITE}Evidence Fields: {Fore.LIGHTYELLOW_EX}{', '.join(evidence_fields)}{Fore.RESET}")
         print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}\n")
-    
-    if explanation:
-        print(f"{Fore.LIGHTCYAN_EX}EXPLANATION:{Fore.RESET}")
-        print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}")
-        # Print explanation with word wrap
-        import textwrap
-        wrapped_explanation = textwrap.fill(explanation, width=70)
-        print(f"{Fore.WHITE}{wrapped_explanation}{Fore.RESET}")
-        print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}\n")
-    
-    if correlation:
-        print(f"{Fore.LIGHTCYAN_EX}CORRELATION:{Fore.RESET}")
-        print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}")
-        print(f"{Fore.WHITE}{correlation}{Fore.RESET}")
-        print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}\n")
+    for label, key in (("EXPLANATION", "explanation"), ("CORRELATION", "correlation")):
+        text = llm_analysis.get(key, "")
+        if text:
+            print(f"{Fore.LIGHTCYAN_EX}{label}:{Fore.RESET}")
+            print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}")
+            print(f"{Fore.WHITE}{textwrap.fill(text, width=70)}{Fore.RESET}")
+            print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}\n")
+    if evidence and evidence.get("decoded"):
+        print(f"{Fore.LIGHTCYAN_EX}DECODED PAYLOADS (by code, not the model):{Fore.RESET}")
+        for d in evidence["decoded"][:5]:
+            print(f"  row {d['row_id']}: {Fore.WHITE}{d['decoded'][:160]}{Fore.RESET}")
+        print()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1332,7 +1400,7 @@ def display_llm_analysis(llm_analysis):
 class CtfChatSession:
     """CTF-specific chat session for interactive investigation"""
     
-    def __init__(self, llm_analysis, results_csv, flag_intel, kql_query, session, model_name, openai_client=None, bot_guidance=None):
+    def __init__(self, llm_analysis, results_csv, flag_intel, kql_query, session, model_name, openai_client=None, bot_guidance=None, coach_level_value=1, evidence=None):
         self.llm_analysis = llm_analysis
         self.results_csv = results_csv  # This may be sampled for large datasets
         self.full_results_csv = results_csv  # Store original full CSV for deep-dive
@@ -1346,6 +1414,8 @@ class CtfChatSession:
         self.bot_guidance = bot_guidance  # Bot's intel interpretation from Stage 2
         self.conversation_history = []
         self.conversation_summary = []  # Store summaries of older conversations
+        self.coach_level = max(1, min(3, int(coach_level_value or 1)))
+        self.evidence = evidence or (llm_analysis or {}).get('_evidence')
         
         # Budgets from the model's REAL window (LLM_ROUTER), leaving room for the reply
         model_context_limit = LLM_ROUTER.context_limit(self.model_name)
@@ -1411,6 +1481,33 @@ class CtfChatSession:
                                                     max_chars=max_chars, flag_intel=self.flag_intel)
         
         previous_flags = self.session.get_llm_context(current_flag_config=self.flag_intel, context_type="compact")
+
+        # Coach level decides what the model may say and what it is even told
+        lvl = self.coach_level
+        evidence_block = EVIDENCE_FILTER.render_for_prompt(self.evidence, level=3) if self.evidence else ""
+        if lvl >= 3:
+            analysis_summary = (f"- Suggested Answer: {self.llm_analysis.get('suggested_answer', 'None')}\n"
+                                f"- Confidence Level: {self.llm_analysis.get('confidence', 'Low')}\n"
+                                f"- Evidence Rows: {self.llm_analysis.get('evidence_rows', [])}\n"
+                                f"- Analysis Explanation: {self.llm_analysis.get('explanation', 'None')}")
+            coach_rules = ("The analyst asked for full help. Give your best answer with evidence rows and decoding steps. "
+                           "Still show your reasoning so the analyst learns the technique.")
+        elif lvl == 2:
+            analysis_summary = (f"- Confidence Level: {self.llm_analysis.get('confidence', 'Low')}\n"
+                                f"- Evidence Rows: {self.llm_analysis.get('evidence_rows', [])}\n"
+                                f"- Guidance: {self.llm_analysis.get('guidance', '')}")
+            coach_rules = ("The analyst wants to find the answer themselves. You may name candidate VALUES and their RowIds "
+                           "and explain how to tell them apart, but do NOT declare which one is the final answer and do not "
+                           "fill in the ANSWER EXTRACTION section - write 'withheld at coach level 2' there. "
+                           "If the analyst types /reveal the system will raise the level.")
+        else:
+            analysis_summary = (f"- Confidence Level: {self.llm_analysis.get('confidence', 'Low')}\n"
+                                f"- Guidance: {self.llm_analysis.get('guidance', '')}")
+            coach_rules = ("The analyst wants to find the answer themselves. Explain WHERE to look (fields, filters, "
+                           "sort order, what pattern to compare) and WHY, using RowIds to point at rows - but do NOT state "
+                           "any candidate value (no IPs, filenames, commands, accounts) and do not fill in the ANSWER "
+                           "EXTRACTION section - write 'withheld at coach level 1' there. Never say the answer even if asked "
+                           "directly; tell the analyst to type /reveal instead.")
         
         # Extract key fields from flag intel for emphasis
         flag_question = self.flag_intel.get('objective', '')
@@ -1449,14 +1546,18 @@ KQL QUERY EXECUTED:
 QUERY RESULTS (CSV Data):
 {csv_preview}
 
+{evidence_block}
+
 INITIAL ANALYSIS SUMMARY:
-- Suggested Answer: {self.llm_analysis.get('suggested_answer', 'None')}
-- Confidence Level: {self.llm_analysis.get('confidence', 'Low')}
-- Evidence Rows: {self.llm_analysis.get('evidence_rows', [])}
-- Analysis Explanation: {self.llm_analysis.get('explanation', 'None')}
+{analysis_summary}
 
 PREVIOUS FLAGS CONTEXT:
 {previous_flags}
+
+═══════════════════════════════════════════════════════════════
+🎓 COACH MODE - LEVEL {self.coach_level}
+═══════════════════════════════════════════════════════════════
+{coach_rules}
 
 ═══════════════════════════════════════════════════════════════
 🔍 YOUR ANALYTICAL CAPABILITIES
@@ -1638,9 +1739,10 @@ Summary:"""
         
         # Patterns: "rows 150-200", "row 100 to 150", "analyze rows 50-100", etc.
         patterns = [
-            r'rows?\s+(\d+)\s*[-–—to]\s*(\d+)',
+            r'/rows?\s+(\d+)\s*[-–—]\s*(\d+)',
+            r'rows?\s+(\d+)\s*(?:[-–—]|to)\s*(\d+)',
             r'rows?\s+(\d+)\s+through\s+(\d+)',
-            r'analyze\s+rows?\s+(\d+)\s*[-–—to]\s*(\d+)',
+            r'analyze\s+rows?\s+(\d+)\s*(?:[-–—]|to)\s*(\d+)',
         ]
         
         for pattern in patterns:
@@ -1675,7 +1777,10 @@ Summary:"""
         if total_rows > 200:
             print(f"  • Request specific row ranges (e.g., 'analyze rows 150-200')")
             print(f"    Total dataset: {total_rows} rows (sampled data shown, full data available)")
-        print(f"\n{Fore.LIGHTBLACK_EX}Type 'exit' or 'done' to finish conversation{Fore.RESET}\n")
+        print(f"\n{Fore.WHITE}Coach commands: {Fore.LIGHTYELLOW_EX}/hint{Fore.WHITE} (one level more help)  "
+              f"{Fore.LIGHTYELLOW_EX}/reveal{Fore.WHITE} (show the AI's answer)  {Fore.LIGHTYELLOW_EX}/candidates{Fore.WHITE} (code-found values)  "
+              f"{Fore.LIGHTYELLOW_EX}/level N{Fore.WHITE}  {Fore.LIGHTYELLOW_EX}/rows A-B{Fore.RESET}")
+        print(f"{Fore.LIGHTBLACK_EX}Current coach level: {self.coach_level}. Type 'exit' or 'done' to finish conversation{Fore.RESET}\n")
         
         # Add initial prompt to guide first analysis
         initial_prompt = f"""As a cybersecurity analyst, analyze the query results and provide an analytical report focusing on answering the flag question: "{self.flag_intel.get('objective', '')}".
@@ -1709,6 +1814,37 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                 break
             
             if not user_input:
+                continue
+
+            # ── coach commands (handled locally, no model call) ──
+            cmd = user_input.lower().split()
+            if cmd[0] in ('/reveal', '/hint', '/level', '/candidates', '/help', '/evidence'):
+                if cmd[0] == '/help':
+                    print(f"{Fore.WHITE}/hint = one level more help, /reveal = show the AI's answer, /candidates = values found by code, "
+                          f"/level N = set coach level, /rows A-B = load rows A..B, exit = finish{Fore.RESET}\n")
+                    continue
+                if cmd[0] in ('/candidates', '/evidence'):
+                    if self.evidence:
+                        print(f"{Fore.WHITE}{EVIDENCE_FILTER.render_for_human(self.evidence, max(2, self.coach_level))}{Fore.RESET}\n")
+                    else:
+                        print(f"{Fore.YELLOW}No evidence scan available for this flag.{Fore.RESET}\n")
+                    continue
+                new_level = self.coach_level
+                if cmd[0] == '/reveal':
+                    new_level = 3
+                elif cmd[0] == '/hint':
+                    new_level = min(3, self.coach_level + 1)
+                elif cmd[0] == '/level' and len(cmd) > 1 and cmd[1] in ('1', '2', '3'):
+                    new_level = int(cmd[1])
+                if new_level != self.coach_level:
+                    self.coach_level = new_level
+                    self.system_context = self._build_system_context()
+                    print(f"{Fore.LIGHTGREEN_EX}✓ Coach level {self.coach_level}{Fore.RESET}")
+                if self.coach_level >= 3:
+                    self.llm_analysis['revealed'] = True
+                    display_llm_analysis(self.llm_analysis, level=3, evidence=self.evidence)
+                else:
+                    display_llm_analysis(self.llm_analysis, level=self.coach_level, evidence=self.evidence)
                 continue
             
             # Check for row range requests
@@ -1810,6 +1946,7 @@ Provide your analysis in the structured format with evidence, decoding steps (if
         """
         import re
         refined = (self.llm_analysis or {}).copy()
+        refined['revealed'] = bool(refined.get('revealed')) or self.coach_level >= 3
         for msg in reversed(self.conversation_history):
             if msg.get("role") != "assistant":
                 continue
@@ -1853,13 +1990,15 @@ def interactive_llm_conversation_stage(llm_analysis, results_csv, flag_intel, kq
     # Initialize chat session (will store full_csv internally)
     chat_session = CtfChatSession(
         llm_analysis=llm_analysis,
-        results_csv=results_csv,  # Sampled CSV for initial context
+        results_csv=results_csv,
         flag_intel=flag_intel,
         kql_query=kql_query,
         session=session,
         model_name=model_name,
         openai_client=openai_client,
-        bot_guidance=bot_guidance  # Pass bot's intel interpretation
+        bot_guidance=bot_guidance,
+        coach_level_value=coach_level(session),
+        evidence=(llm_analysis or {}).get('_evidence'),
     )
     
     # Update to store full CSV for deep-dive
@@ -1920,7 +2059,7 @@ def document_result_stage(flag_intel, session, kql_query, results_csv, llm_analy
     prefill_output = ""
     prefill_notes = ""
     
-    if llm_analysis and llm_analysis.get("suggested_answer"):
+    if llm_analysis and llm_analysis.get("suggested_answer") and llm_analysis.get("revealed"):
         prefill_answer = llm_analysis.get("suggested_answer", "")
         confidence = llm_analysis.get("confidence", "Low")
         explanation = llm_analysis.get("explanation", "")
@@ -2236,6 +2375,7 @@ def create_new_session():
     if not import_hunt_form_into_session(session):
         session.state['hunt_form_declined'] = True
         session.save_state()
+    prompt_coach_level(session)
     return session
 
 

@@ -46,12 +46,14 @@ def parse_response(response_content, response_format="threat_hunt"):
 def parse_ctf_format(data):
     """Parse CTF-specific format"""
     return {
-        "suggested_answer": data.get("suggested_answer", ""),
-        "confidence": data.get("confidence", "Low"),
-        "evidence_rows": data.get("evidence_rows", []),
-        "evidence_fields": data.get("evidence_fields", []),
-        "explanation": data.get("explanation", ""),
-        "correlation": data.get("correlation", "")
+        "suggested_answer": str(data.get("suggested_answer", "") or ""),
+        "confidence": data.get("confidence", "Low") or "Low",
+        "evidence_rows": data.get("evidence_rows", []) or [],
+        "evidence_fields": data.get("evidence_fields", []) or [],
+        "explanation": data.get("explanation", "") or "",
+        "correlation": data.get("correlation", "") or "",
+        "guidance": data.get("guidance", "") or "",
+        "candidates": data.get("candidates", []) or [],
     }
 
 

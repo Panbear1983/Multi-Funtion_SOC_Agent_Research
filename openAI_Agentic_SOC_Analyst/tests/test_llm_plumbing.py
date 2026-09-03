@@ -171,6 +171,7 @@ class _FakeSession:
 
 def test_refined_analysis_only_uses_explicit_answer_section():
     s = CTF_HUNT_MODE.CtfChatSession.__new__(CTF_HUNT_MODE.CtfChatSession)
+    s.coach_level = 3
     s.llm_analysis = {"suggested_answer": "", "confidence": "Low"}
     s.conversation_history = [
         {"role": "user", "content": "look at rows 1-5"},
