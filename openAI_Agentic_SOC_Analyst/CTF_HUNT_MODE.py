@@ -506,6 +506,7 @@ def _pick_planned_flag(session):
     pending = [f for f in planned if f['number'] not in captured]
     default = pending[0]['number'] if pending else None
 
+    flush_typeahead()
     print(f"{Fore.WHITE}Flags in this hunt ({session.state.get('hunt_form', {}).get('title', '')}):{Fore.RESET}")
     for f in planned:
         mark = f"{Fore.LIGHTGREEN_EX}✓" if f['number'] in captured else f"{Fore.LIGHTBLACK_EX}·"
@@ -563,6 +564,7 @@ def capture_flag_intel_stage(session):
             return capture_flag_intel_stage(session)
         session.state['hunt_form_declined'] = True
     
+    flush_typeahead()
     print(f"{Fore.WHITE}Paste the flag intel below. End with the exact question to answer.{Fore.RESET}")
     print(f"{Fore.LIGHTBLACK_EX}Include:{Fore.RESET}")
     print(f"{Fore.LIGHTBLACK_EX}  • Flag title")
@@ -732,6 +734,53 @@ CORRELATION: [How to use previous flags, if applicable]
 # STAGE 3: HUMAN WRITES KQL (NEW)
 # ═══════════════════════════════════════════════════════════════
 
+KQL_START_RE = re.compile(r"^\s*(?:let\s|union\s|search\s|print\s|[A-Za-z_][A-Za-z0-9_]*\s*(?:\||$))", re.I)
+INTEL_LINE_RE = re.compile(r"^\s*(?:🚩|flag\s*\d*\s*[:\-]|flag format\s*:|hint\s*\d*\s*:|reference\s*:|question\s*:|objective\s*:|format\s*:|mitre\s*:)", re.I)
+
+
+def flush_typeahead():
+    """
+    Drop keystrokes typed/pasted BEFORE a prompt appeared. Text pasted while the model was
+    still thinking used to be swallowed as the first lines of the next stage's input - on
+    2026-09-03 three leftover flag-intel lines were sent to Azure as part of a KQL query.
+    """
+    try:
+        import sys, termios
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except Exception:
+        pass
+
+
+def clean_kql_lines(lines):
+    """
+    Keep only the KQL: strip transcript prompts ('KQL > '), drop flag-intel lines and anything
+    before the first line that looks like the start of a query. Returns (kept, dropped).
+    """
+    kept, dropped = [], []
+    started = False
+    for raw in lines:
+        line = re.sub(r"^(?:\s*KQL\s*>\s*)+", "", raw)          # prompts echoed before the text
+        line = re.sub(r"(?:\s*KQL\s*>\s*)+$", "", line)         # prompts glued after a pasted last line
+        if not line.strip():
+            if started:
+                kept.append("")
+            continue
+        if INTEL_LINE_RE.match(line):
+            dropped.append(line)
+            continue
+        if not started:
+            if KQL_START_RE.match(line):
+                started = True
+            else:
+                dropped.append(line)
+                continue
+        kept.append(line.rstrip())
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return kept, dropped
+
+
 def human_kql_entry_stage(bot_guidance):
     """Human writes their own KQL query"""
     
@@ -756,27 +805,46 @@ def human_kql_entry_stage(bot_guidance):
     print(f"{Fore.LIGHTBLACK_EX}KQL > DONE")
     print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}\n")
     
-    query_lines = []
-    
-    try:
-        while True:
-            line = input(f"{Fore.WHITE}KQL > {Fore.RESET}")
-            if line.strip().upper() == 'DONE':
-                break
-            query_lines.append(line)
-    except (KeyboardInterrupt, EOFError):
-        print(f"\n{Fore.YELLOW}Cancelled{Fore.RESET}")
-        return None
-    
-    if not query_lines:
-        print(f"{Fore.YELLOW}No query entered.{Fore.RESET}")
-        return None
-    
-    kql_query = '\n'.join(query_lines)
-    
-    print(f"\n{Fore.LIGHTBLACK_EX}Processing query...{Fore.RESET}\n")
-    
-    return kql_query
+    while True:
+        flush_typeahead()
+        query_lines = []
+        try:
+            while True:
+                line = input(f"{Fore.WHITE}KQL > {Fore.RESET}")
+                if line.strip().upper() == 'DONE':
+                    break
+                query_lines.append(line)
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n{Fore.YELLOW}Cancelled{Fore.RESET}")
+            return None
+
+        kept, dropped = clean_kql_lines(query_lines)
+        if dropped:
+            print(f"\n{Fore.YELLOW}Ignored {len(dropped)} line(s) that are not KQL (leftover paste / flag intel):{Fore.RESET}")
+            for d in dropped[:5]:
+                print(f"{Fore.LIGHTBLACK_EX}   ✗ {d[:90]}{Fore.RESET}")
+        if not kept:
+            print(f"{Fore.YELLOW}No query entered.{Fore.RESET}")
+            return None
+
+        kql_query = '\n'.join(kept)
+        print(f"\n{Fore.LIGHTCYAN_EX}This query will run:{Fore.RESET}")
+        print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}")
+        for ln in kept:
+            print(f"{Fore.WHITE}{ln}{Fore.RESET}")
+        print(f"{Fore.LIGHTBLACK_EX}{'─'*70}{Fore.RESET}")
+        try:
+            flush_typeahead()
+            ok = input(f"{Fore.LIGHTGREEN_EX}Run it? [Y/n/r=retype]: {Fore.RESET}").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n{Fore.YELLOW}Cancelled{Fore.RESET}")
+            return None
+        if ok in ('', 'y', 'yes'):
+            print(f"\n{Fore.LIGHTBLACK_EX}Processing query...{Fore.RESET}\n")
+            return kql_query
+        if ok in ('n', 'no'):
+            return None
+        print(f"{Fore.LIGHTBLACK_EX}OK - type the query again.{Fore.RESET}\n")
 
 
 # ═══════════════════════════════════════════════════════════════

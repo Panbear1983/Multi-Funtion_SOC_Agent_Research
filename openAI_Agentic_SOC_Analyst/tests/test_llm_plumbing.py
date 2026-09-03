@@ -238,3 +238,30 @@ def test_pasted_intel_parser_accepts_numbered_hints():
     assert intel["hints"] == ["look here", "then there"]
     assert intel["format"] == "username"
     assert intel["objective"] == "who?"
+
+
+# ── KQL entry hygiene (2026-09-03: leftover paste lines were sent to Azure) ──────
+
+def test_clean_kql_drops_leftover_intel_and_transcript_prompts():
+    pasted = [
+        "Reference: Ingress Tool Transfer (T1105)",
+        "Flag Format: domain",
+        "Question: What file hosting service was used to stage malware?",
+        "KQL > KQL > DeviceNetworkEvents",
+        "| where TimeGenerated between (datetime(2025-11-24) .. datetime(2026-11-25))",
+        '| where DeviceName contains "azuki-adminpc"',
+        "| where RemoteUrl != ''",
+        "| project TimeGenerated, RemoteUrl, InitiatingProcessFileName",
+        "| order by TimeGeneratedKQL > KQL >",
+        "", "",
+    ]
+    kept, dropped = CTF_HUNT_MODE.clean_kql_lines(pasted)
+    assert kept[0] == "DeviceNetworkEvents"
+    assert kept[-1] == "| order by TimeGenerated"
+    assert len(dropped) == 3 and all("Format" not in k for k in kept)
+    assert "\n".join(kept).count("KQL >") == 0
+
+
+def test_clean_kql_keeps_let_statements_and_blank_lines_inside():
+    kept, dropped = CTF_HUNT_MODE.clean_kql_lines(["let start = datetime(2026-01-01);", "", "DeviceLogonEvents", "| take 5"])
+    assert kept == ["let start = datetime(2026-01-01);", "", "DeviceLogonEvents", "| take 5"] and not dropped

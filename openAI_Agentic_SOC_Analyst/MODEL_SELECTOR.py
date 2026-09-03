@@ -154,6 +154,12 @@ def prompt_model_selection(input_tokens=None):
 
     print(f"\n{Fore.LIGHTCYAN_EX}{'─'*70}")
 
+    try:  # drop anything pasted while the previous stage was still running
+        import sys, termios
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except Exception:
+        pass
     while True:
         try:
             choice = input(f"{Fore.LIGHTGREEN_EX}Select model [1-{len(model_list)}] or press Enter for {DEFAULT_MODEL}: {Fore.RESET}").strip()
