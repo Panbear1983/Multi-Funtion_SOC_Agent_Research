@@ -22,9 +22,12 @@ def parse_response(response_content, response_format="threat_hunt"):
         Parsed response in appropriate format
     """
     try:
-        # Handle both string and dict inputs
+        # Handle both string and dict inputs (tolerates fences / prose around the JSON)
         if isinstance(response_content, str):
-            data = json.loads(response_content)
+            import LLM_ROUTER
+            data = LLM_ROUTER.extract_json(response_content)
+            if not data:
+                raise json.JSONDecodeError("no JSON object in reply", response_content[:50], 0)
         else:
             data = response_content
         
@@ -73,25 +76,18 @@ def parse_fallback(response_content, response_format, error=None):
         confidence = "Low"
         explanation = content_str[:1000] if len(content_str) > 1000 else content_str
         
-        # Try to find answer-like patterns
+        # Do NOT guess an answer from the first IP/filename in the text (that invented
+        # wrong flags before). Surface candidates in the explanation; the answer stays empty.
         import re
-        # IP address pattern
-        ip_match = re.search(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', content_str)
-        if ip_match:
-            suggested_answer = ip_match.group(0)
-        
-        # Filename pattern
-        if not suggested_answer:
-            filename_match = re.search(r'[\w\-_]+\.(txt|exe|dll|bat|ps1|sh)', content_str, re.IGNORECASE)
-            if filename_match:
-                suggested_answer = filename_match.group(0)
-        
+        candidates = re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', content_str)[:5]
+        candidates += re.findall(r'[\w\-]+\.(?:txt|exe|dll|bat|ps1|sh|zip|7z)', content_str, re.IGNORECASE)[:5]
+        cand_note = f" Values mentioned in the reply: {', '.join(dict.fromkeys(candidates))}." if candidates else ""
         return {
-            "suggested_answer": suggested_answer,
+            "suggested_answer": "",
             "confidence": "Low",
             "evidence_rows": [],
             "evidence_fields": [],
-            "explanation": f"Partial parsing (JSON error: {error}). Extracted: {explanation}",
+            "explanation": f"The model's reply was not valid JSON (error: {error}).{cand_note} Raw reply: {explanation}",
             "correlation": ""
         }
     else:

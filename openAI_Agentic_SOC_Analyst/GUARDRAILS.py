@@ -8,6 +8,7 @@ ALLOWED_TABLES = {
     "DeviceLogonEvents": { "TimeGenerated", "AccountName", "DeviceName", "ActionType", "RemoteIP", "RemoteDeviceName" },
     "DeviceFileEvents": {"TimeGenerated","ActionType","DeviceName","FileName","FolderPath","InitiatingProcessAccountName","SHA256"},
     "DeviceRegistryEvents": { "TimeGenerated","ActionType","DeviceName","RegistryKey","InitiatingProcessAccountName" },
+    "DeviceEvents": { "TimeGenerated", "ActionType", "DeviceName", "FileName", "FolderPath", "AccountName", "InitiatingProcessCommandLine", "InitiatingProcessFileName", "AdditionalFields" },
     "AlertInfo": {},  # No fields specified in tools
     "AlertEvidence": {},  # No fields specified in tools
     "AzureNetworkAnalytics_CL": { "TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "DestPort_d", "VM_s", "AllowedInFlows_d", "AllowedOutFlows_d", "DeniedInFlows_d", "DeniedOutFlows_d" },
@@ -20,85 +21,13 @@ ALLOWED_TABLES = {
 # Token optimization: Model-aware field prioritization
 # GPT-OSS (32K limit): Essential fields only for token efficiency
 # Qwen (128K limit): All allowed fields (full context)
+# Field sets sent to the model. One local model policy (2026-09-03): qwen3:8b gets the
+# full allowed field set; cloud models (OpenAI/Claude) have huge windows and get the same.
+_FULL_FIELDS = {t: ALLOWED_TABLES[t] for t in ALLOWED_TABLES}
+
 OPTIMAL_FIELDS_BY_MODEL = {
-    "gpt-oss:20b": {
-        # GPT-OSS: Essential fields only (token-efficient)
-        "DeviceProcessEvents": {"TimeGenerated", "AccountName", "DeviceName", "ProcessCommandLine"},
-        "DeviceNetworkEvents": {"TimeGenerated", "DeviceName", "RemoteIP"},
-        "DeviceLogonEvents": {"TimeGenerated", "AccountName", "RemoteIP"},
-        "DeviceFileEvents": {"TimeGenerated", "DeviceName", "FileName", "SHA256"},
-        "DeviceRegistryEvents": {"TimeGenerated", "DeviceName", "RegistryKey"},
-        "AzureNetworkAnalytics_CL": {"TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "VM_s"},
-        "AzureActivity": {"TimeGenerated", "OperationNameValue", "Caller", "CallerIpAddress"},
-        "SigninLogs": {"TimeGenerated", "UserPrincipalName", "IPAddress"},
-        "AuditLogs": {"TimeGenerated", "OperationName", "InitiatedBy"},
-        "AzureNetworkAnalyticsIPDetails_CL": {"TimeGenerated", "IPAddress_s", "ThreatType_s"},
-    },
-    "qwen": {
-        # Qwen: All allowed fields (128K headroom)
-        "DeviceProcessEvents": ALLOWED_TABLES["DeviceProcessEvents"],
-        "DeviceNetworkEvents": ALLOWED_TABLES["DeviceNetworkEvents"],
-        "DeviceLogonEvents": ALLOWED_TABLES["DeviceLogonEvents"],
-        "DeviceFileEvents": ALLOWED_TABLES["DeviceFileEvents"],
-        "DeviceRegistryEvents": ALLOWED_TABLES["DeviceRegistryEvents"],
-        "AzureNetworkAnalytics_CL": ALLOWED_TABLES["AzureNetworkAnalytics_CL"],
-        "AzureActivity": ALLOWED_TABLES["AzureActivity"],
-        "SigninLogs": ALLOWED_TABLES["SigninLogs"],
-        "AuditLogs": ALLOWED_TABLES["AuditLogs"],
-        "AzureNetworkAnalyticsIPDetails_CL": ALLOWED_TABLES["AzureNetworkAnalyticsIPDetails_CL"],
-    },
-    "qwen3:8b": {
-        # Qwen3:8b uses same as qwen
-        "DeviceProcessEvents": ALLOWED_TABLES["DeviceProcessEvents"],
-        "DeviceNetworkEvents": ALLOWED_TABLES["DeviceNetworkEvents"],
-        "DeviceLogonEvents": ALLOWED_TABLES["DeviceLogonEvents"],
-        "DeviceFileEvents": ALLOWED_TABLES["DeviceFileEvents"],
-        "DeviceRegistryEvents": ALLOWED_TABLES["DeviceRegistryEvents"],
-        "AzureNetworkAnalytics_CL": ALLOWED_TABLES["AzureNetworkAnalytics_CL"],
-        "AzureActivity": ALLOWED_TABLES["AzureActivity"],
-        "SigninLogs": ALLOWED_TABLES["SigninLogs"],
-        "AuditLogs": ALLOWED_TABLES["AuditLogs"],
-        "AzureNetworkAnalyticsIPDetails_CL": ALLOWED_TABLES["AzureNetworkAnalyticsIPDetails_CL"],
-    },
-    "mixtral": {
-        # Mixtral 8x7B MoE: 32K context — same trimmed fields as gpt-oss:20b
-        "DeviceProcessEvents": {"TimeGenerated", "AccountName", "DeviceName", "ProcessCommandLine"},
-        "DeviceNetworkEvents": {"TimeGenerated", "DeviceName", "RemoteIP"},
-        "DeviceLogonEvents": {"TimeGenerated", "AccountName", "RemoteIP"},
-        "DeviceFileEvents": {"TimeGenerated", "DeviceName", "FileName", "SHA256"},
-        "DeviceRegistryEvents": {"TimeGenerated", "DeviceName", "RegistryKey"},
-        "AzureNetworkAnalytics_CL": {"TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "VM_s"},
-        "AzureActivity": {"TimeGenerated", "OperationNameValue", "Caller", "CallerIpAddress"},
-        "SigninLogs": {"TimeGenerated", "UserPrincipalName", "IPAddress"},
-        "AuditLogs": {"TimeGenerated", "OperationName", "InitiatedBy"},
-        "AzureNetworkAnalyticsIPDetails_CL": {"TimeGenerated", "IPAddress_s", "ThreatType_s"},
-    },
-    "gemma4:26b": {
-        # Gemma4 26B: 128K context — full fields like qwen
-        "DeviceProcessEvents": ALLOWED_TABLES["DeviceProcessEvents"],
-        "DeviceNetworkEvents": ALLOWED_TABLES["DeviceNetworkEvents"],
-        "DeviceLogonEvents": ALLOWED_TABLES["DeviceLogonEvents"],
-        "DeviceFileEvents": ALLOWED_TABLES["DeviceFileEvents"],
-        "DeviceRegistryEvents": ALLOWED_TABLES["DeviceRegistryEvents"],
-        "AzureNetworkAnalytics_CL": ALLOWED_TABLES["AzureNetworkAnalytics_CL"],
-        "AzureActivity": ALLOWED_TABLES["AzureActivity"],
-        "SigninLogs": ALLOWED_TABLES["SigninLogs"],
-        "AuditLogs": ALLOWED_TABLES["AuditLogs"],
-        "AzureNetworkAnalyticsIPDetails_CL": ALLOWED_TABLES["AzureNetworkAnalyticsIPDetails_CL"],
-    },
-    "gemma4:e4b": {
-        # Gemma4 e4b (efficient 4B): 32K context — trimmed fields for token efficiency
-        "DeviceProcessEvents": {"TimeGenerated", "AccountName", "DeviceName", "ProcessCommandLine"},
-        "DeviceNetworkEvents": {"TimeGenerated", "DeviceName", "RemoteIP"},
-        "DeviceLogonEvents": {"TimeGenerated", "AccountName", "RemoteIP"},
-        "DeviceFileEvents": {"TimeGenerated", "DeviceName", "FileName", "SHA256"},
-        "DeviceRegistryEvents": {"TimeGenerated", "DeviceName", "RegistryKey"},
-        "AzureNetworkAnalytics_CL": {"TimeGenerated", "FlowType_s", "SrcPublicIPs_s", "DestIP_s", "VM_s"},
-        "AzureActivity": {"TimeGenerated", "OperationNameValue", "Caller", "CallerIpAddress"},
-        "SigninLogs": {"TimeGenerated", "UserPrincipalName", "IPAddress"},
-        "AuditLogs": {"TimeGenerated", "OperationName", "InitiatedBy"},
-        "AzureNetworkAnalyticsIPDetails_CL": {"TimeGenerated", "IPAddress_s", "ThreatType_s"},
-    }
+    "qwen3:8b": _FULL_FIELDS,
+    "qwen": _FULL_FIELDS,
 }
 
 def get_optimal_fields_for_model(table, model_name):
@@ -108,7 +37,7 @@ def get_optimal_fields_for_model(table, model_name):
     
     Args:
         table: Table name
-        model_name: Model name (e.g., "gpt-oss:20b", "qwen")
+        model_name: Model name (e.g., "qwen3:8b")
     
     Returns:
         Set of optimal fields for the model
@@ -120,17 +49,21 @@ def get_optimal_fields_for_model(table, model_name):
     # Fallback: Use all allowed fields
     return ALLOWED_TABLES.get(table, set())
 
+# The model registry lives in LLM_ROUTER (single source of truth). This view keeps the
+# shape older code expects: max tokens, prices, OpenAI rate tiers.
+import LLM_ROUTER
+
 ALLOWED_MODELS = {
-    "gpt-4.1-nano": {"max_input_tokens": 1_047_576, "max_output_tokens": 32_768,  "cost_per_million_input": 0.10, "cost_per_million_output": 0.40,  "tier": {"free": 40_000, "1": 200_000, "2": 2_000_000, "3": 4_000_000, "4": 10_000_000, "5": 150_000_000}},
-    "gpt-4.1":      {"max_input_tokens": 1_047_576, "max_output_tokens": 32_768,  "cost_per_million_input": 1.00, "cost_per_million_output": 8.00,  "tier": {"free": None,   "1": 30_000,  "2": 450_000,   "3": 800_000,   "4": 2_000_000,  "5": 30_000_000}},
-    "gpt-5-mini":   {"max_input_tokens": 272_000,   "max_output_tokens": 128_000, "cost_per_million_input": 0.25, "cost_per_million_output": 2.00,  "tier": {"free": None,   "1": 200_000, "2": 2_000_000, "3": 4_000_000, "4": 10_000_000, "5": 180_000_000}},
-    "gpt-5":        {"max_input_tokens": 272_000,   "max_output_tokens": 128_000, "cost_per_million_input": 1.25, "cost_per_million_output": 10.00, "tier": {"free": None,   "1": 30_000,  "2": 450_000,   "3": 800_000,   "4": 2_000_000,  "5": 40_000_000}},
-    "local-mix":    {"max_input_tokens": 128_000,   "max_output_tokens": 32_768,  "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
-    "qwen":         {"max_input_tokens": 128_000,   "max_output_tokens": 32_768,  "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
-    "gpt-oss:20b":  {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
-    "mixtral":      {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
-    "gemma4:26b":   {"max_input_tokens": 131_072,   "max_output_tokens": 8_192,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}},
-    "gemma4:e4b":   {"max_input_tokens": 32_000,    "max_output_tokens": 4_096,   "cost_per_million_input": 0.00, "cost_per_million_output": 0.00, "tier": {"free": None,   "1": None,    "2": None,      "3": None,      "4": None,       "5": None}}
+    name: {
+        "max_input_tokens": m["max_input_tokens"],
+        "max_output_tokens": m["max_output_tokens"],
+        "cost_per_million_input": m["cost_per_million_input"],
+        "cost_per_million_output": m["cost_per_million_output"],
+        "provider": m["provider"],
+        "tier": m.get("tier") or {"free": None, "1": None, "2": None, "3": None, "4": None, "5": None},
+    }
+    for name, m in LLM_ROUTER.MODELS.items()
+    if not m.get("hidden")
 }
 
 def validate_tables_and_fields(table, fields, model_name=None):

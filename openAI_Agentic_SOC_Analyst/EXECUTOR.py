@@ -6,60 +6,12 @@ import json
 import pandas as pd
 from color_support import Fore, Style
 from openai import RateLimitError, OpenAIError
-import OLLAMA_CLIENT
-import QWEN_ENHANCER
-import GPT_OSS_ENHANCER
 
 # Local modules
+import LLM_ROUTER
+import QWEN_ENHANCER
 import PROMPT_MANAGEMENT
 import TIME_ESTIMATOR
-
-def select_optimal_local_model(messages, table_name=None, severity_config=None):
-    """
-    Intelligently select which local model to use based on task characteristics
-    
-    Selection Strategy:
-    - High-volume tables (lots of data) → Qwen (128K context, faster)
-    - Reasoning-heavy tables (complex analysis) → GPT-OSS (20B params, better logic)
-    - Token count fallback → Qwen if >50K tokens, GPT-OSS if ≤50K
-    """
-    
-    # Define table categories
-    HIGH_VOLUME_TABLES = {
-        'DeviceNetworkEvents',      # Lots of network connections
-        'DeviceFileEvents',          # Many file operations  
-        'SigninLogs',                # Many authentication events
-        'AzureNetworkAnalytics_CL'   # Network flow data
-    }
-    
-    REASONING_HEAVY_TABLES = {
-        'DeviceProcessEvents',       # Command line analysis, tactics
-        'DeviceRegistryEvents',      # Persistence mechanisms
-        'AzureActivity',             # Cloud policy violations
-        'DeviceLogonEvents'          # Login pattern analysis
-    }
-    
-    # Strategy 1: Table-based routing (if table_name provided)
-    if table_name:
-        if table_name in HIGH_VOLUME_TABLES:
-            return "qwen"
-        elif table_name in REASONING_HEAVY_TABLES:
-            return "gpt-oss:20b"
-    
-    # Strategy 2: Token count routing (fallback)
-    import MODEL_SELECTOR
-    try:
-        token_count = MODEL_SELECTOR.count_tokens(messages, "qwen")
-        
-        if token_count > 50000:
-            # Large dataset → Qwen (handles volume better)
-            return "qwen"
-        else:
-            # Smaller dataset → GPT-OSS (better reasoning)
-            return "gpt-oss:20b"
-    except:
-        # Default fallback
-        return "qwen"
 
 def _should_chunk_messages(model_name, messages):
     """Check if messages need chunking based on model limits"""
@@ -225,276 +177,148 @@ def _chunk_and_process_local_model(enhancer, messages, model_name, max_lines, ch
     
     return {"findings": all_results}
 
+def _extract_ctf(results):
+    """Pull the CTF answer dict out of whatever shape an analysis path returned."""
+    if isinstance(results, dict) and "suggested_answer" in results:
+        return results
+    if isinstance(results, dict) and "findings" in results:
+        for finding in results.get("findings", []):
+            if isinstance(finding, dict) and "_ctf_analysis" in finding:
+                return finding["_ctf_analysis"]
+        import RESPONSE_PARSER
+        return RESPONSE_PARSER.parse_response(json.dumps(results), "ctf")
+    return None
+
+
+def _enrich(results):
+    """Threat-hunt mode: attach entity/vector summaries (best effort)."""
+    try:
+        import UTILITIES
+        enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
+        results["findings"] = enriched
+        results["entity_summary"] = summary
+    except Exception:
+        pass
+    return results
+
+
 def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, openai_model, severity_config=None, table_name=None, investigation_context=None):
     """
-    Runs the threat hunting flow:
-    1. Formats the logs into a string
-    2. Selects appropriate system prompt from context
-    3. Passes logs + role to model
-    4. Parses and returns a raw array
-    Handles rate-limit/token overage errors gracefully.
-    
-    NEW: Supports 'local-mix' for TRUE HYBRID MODEL (Qwen + GPT-OSS)
+    Runs the analysis for one prompt (threat hunt, anomaly or CTF):
+      local  (qwen3:8b)      → QwenEnhancer: rules + LLM, chunked if the data is too big
+      cloud  (OpenAI/Claude) → one JSON-mode call through LLM_ROUTER
+    Returns {"findings": [...]} for hunts, or the CTF answer dict in CTF mode.
+    Never truncates silently: PromptTooLargeError is caught and reported.
     """
+    if openai_client is not None:
+        LLM_ROUTER.set_openai_client(openai_client)
 
-    results = []
-    
-    messages = [
-        threat_hunt_system_message,
-        threat_hunt_user_message
-    ]
+    model = LLM_ROUTER.resolve(openai_model)
+    is_ctf = bool(investigation_context and investigation_context.get("mode") == "ctf")
+    messages = [threat_hunt_system_message, threat_hunt_user_message]
 
     try:
-        # NEW: Handle local-mix with TRUE HYBRID MODEL
-        if openai_model == "local-mix":
-            print(f"{Fore.LIGHTCYAN_EX}🔀 Using TRUE HYBRID MODEL (Qwen + GPT-OSS - Fully Offline){Fore.RESET}")
-            
-            # Import hybrid engine
-            import HYBRID_ENGINE
-            
-            # Determine investigation mode from context
-            investigation_mode = investigation_context.get('mode', 'threat_hunt') if investigation_context else 'threat_hunt'
-            query_method = investigation_context.get('query_method', 'llm') if investigation_context else 'llm'
-            
-            # Initialize hybrid engine with dynamic configuration
-            hybrid_engine = HYBRID_ENGINE.HybridEngine(
-                investigation_mode=investigation_mode,
-                severity_config=severity_config,
-                query_method=query_method,
-                openai_client=openai_client
-            )
-            
-            # Run hybrid analysis
-            results = hybrid_engine.analyze(
-                messages=messages,
-                table_name=table_name,
-                context=investigation_context
-            )
-            
-            # For CTF mode, extract CTF format from results
-            if investigation_context and investigation_context.get('mode') == 'ctf':
-                import RESPONSE_PARSER
-                # Check if results already in CTF format or need extraction from findings
-                if isinstance(results, dict) and "suggested_answer" in results:
-                    # Already CTF format
-                    return results
-                elif isinstance(results, dict) and "findings" in results:
-                    # Extract CTF data from findings format
-                    findings = results.get("findings", [])
-                    for finding in findings:
-                        if isinstance(finding, dict) and "_ctf_analysis" in finding:
-                            return finding["_ctf_analysis"]
-                    # If no _ctf_analysis, try to parse from findings structure
-                    return RESPONSE_PARSER.parse_response(json.dumps(results), "ctf")
-            
-            # Threat hunt mode - enrich findings
-            try:
-                import UTILITIES
-                enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
-                results["findings"] = enriched
-                results["entity_summary"] = summary
-            except Exception:
-                pass
-            return results
-        
-        # Check if this is an Ollama model (local)
-        if openai_model == "qwen":
-            print(f"{Fore.LIGHTCYAN_EX}Using Ollama local model (qwen3:8b) with GUARDRAILS enforcement...{Fore.RESET}")
-            # Use enhanced pipeline for Qwen models with severity config
+        if LLM_ROUTER.is_local(model):
+            print(f"{Fore.LIGHTCYAN_EX}Using local model {model} with GUARDRAILS enforcement...{Fore.RESET}")
             severity_mult = severity_config['pattern_multiplier'] if severity_config else 1.0
             max_lines = severity_config['max_log_lines'] if severity_config else 50
-            
-            # Check if chunking is needed
-            should_chunk, input_tokens, threshold = _should_chunk_messages("qwen3:8b", messages)
-            
-            if should_chunk:
-                print(f"{Fore.LIGHTCYAN_EX}Large dataset detected ({input_tokens:,} tokens) - Using chunked processing{Fore.RESET}")
-                print(f"{Fore.LIGHTBLACK_EX}Model limit: {TIME_ESTIMATOR.get_model_context_limit('qwen3:8b'):,} | Threshold: {threshold:,}{Fore.RESET}")
-            
-            # Initialize enhancer with GUARDRAILS awareness and optional GPT refinement
+
             enhancer = QWEN_ENHANCER.QwenEnhancer(
                 severity_multiplier=severity_mult,
                 openai_client=openai_client,
-                use_gpt_refinement=False,  # Can be enabled via config
-                refinement_model="gpt-4o"
+                use_gpt_refinement=False,
             )
-            
-            # Enable GUARDRAILS based on MODEL_SELECTOR config
             import MODEL_SELECTOR
-            guardrails_config = MODEL_SELECTOR.get_offline_guardrails_config()
-            enhancer.guardrails_enabled = guardrails_config["enabled"]
-            
+            enhancer.guardrails_enabled = MODEL_SELECTOR.get_offline_guardrails_config()["enabled"]
             if enhancer.guardrails_enabled:
                 print(f"{Fore.LIGHTGREEN_EX}  ✓ GUARDRAILS enabled (defense-in-depth security){Fore.RESET}")
-            
-            if enhancer.use_gpt_refinement:
-                print(f"{Fore.LIGHTYELLOW_EX}  ✓ GPT-4o refinement enabled (hybrid mode){Fore.RESET}")
-            
-            if should_chunk:
-                # Use chunked processing
-                chunk_size = int(TIME_ESTIMATOR.get_model_context_limit("qwen3:8b") * 0.8)
-                results = _chunk_and_process_local_model(enhancer, messages, "qwen3:8b", max_lines, chunk_size)
-            else:
-                # Normal processing - pass investigation_context for CTF mode
-                results = enhancer.enhanced_hunt(messages, model_name="qwen3:8b", max_lines=max_lines, investigation_context=investigation_context)
-            
-            # For CTF mode, extract CTF format from results (enhancers return CTF format directly for CTF mode)
-            if investigation_context and investigation_context.get('mode') == 'ctf':
-                # QwenEnhancer returns CTF format directly when is_ctf_mode=True (see QWEN_ENHANCER.py line 1236-1240)
-                if isinstance(results, dict) and "suggested_answer" in results:
-                    return results  # Already CTF format
-                # If still in findings format, extract CTF data
-                elif isinstance(results, dict) and "findings" in results:
-                    findings = results.get("findings", [])
-                    for finding in findings:
-                        if isinstance(finding, dict) and "_ctf_analysis" in finding:
-                            return finding["_ctf_analysis"]
-            
-            # Threat hunt mode - enrich findings
-            try:
-                import UTILITIES
-                enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
-                results["findings"] = enriched
-                results["entity_summary"] = summary
-            except Exception:
-                pass
-            return results
-            
-        elif openai_model == "gpt-oss:20b":
-            print(f"{Fore.LIGHTCYAN_EX}Using Ollama local model (GPT-OSS 20B) with GUARDRAILS enforcement...{Fore.RESET}")
-            # Use specialized GPT-OSS enhancer optimized for 32K token limit
-            severity_mult = severity_config['pattern_multiplier'] if severity_config else 1.0
-            max_lines = severity_config['max_log_lines'] if severity_config else 15  # GPT-OSS has 32K context but needs aggressive slicing
-            
-            # Check if chunking is needed
-            should_chunk, input_tokens, threshold = _should_chunk_messages("gpt-oss:20b", messages)
-            
-            if should_chunk:
-                print(f"{Fore.LIGHTCYAN_EX}Large dataset detected ({input_tokens:,} tokens) - Using chunked processing{Fore.RESET}")
-                print(f"{Fore.LIGHTBLACK_EX}Model limit: {TIME_ESTIMATOR.get_model_context_limit('gpt-oss:20b'):,} | Threshold: {threshold:,}{Fore.RESET}")
-            
-            # Initialize enhancer with GUARDRAILS awareness and optional GPT refinement
-            enhancer = GPT_OSS_ENHANCER.GptOssEnhancer(
-                severity_multiplier=severity_mult,
-                openai_client=openai_client,
-                use_gpt_refinement=False,  # Can be enabled via config
-                refinement_model="gpt-4o"
-            )
-            
-            # Enable GUARDRAILS based on MODEL_SELECTOR config
-            import MODEL_SELECTOR
-            guardrails_config = MODEL_SELECTOR.get_offline_guardrails_config()
-            enhancer.guardrails_enabled = guardrails_config["enabled"]
-            
-            if enhancer.guardrails_enabled:
-                print(f"{Fore.LIGHTGREEN_EX}  ✓ GUARDRAILS enabled (defense-in-depth security){Fore.RESET}")
-            
-            if enhancer.use_gpt_refinement:
-                print(f"{Fore.LIGHTYELLOW_EX}  ✓ GPT-4o refinement enabled (hybrid mode){Fore.RESET}")
-            
-            if should_chunk:
-                # Use chunked processing
-                chunk_size = int(TIME_ESTIMATOR.get_model_context_limit("gpt-oss:20b") * 0.8)
-                results = _chunk_and_process_local_model(enhancer, messages, "gpt-oss:20b", max_lines, chunk_size)
-            else:
-                # Normal processing - pass investigation_context for CTF mode
-                results = enhancer.enhanced_hunt(messages, model_name="gpt-oss:20b", max_lines=max_lines, investigation_context=investigation_context)
-            
-            # For CTF mode, extract CTF format from results (enhancers return CTF format directly for CTF mode)
-            if investigation_context and investigation_context.get('mode') == 'ctf':
-                # GptOssEnhancer returns CTF format directly when is_ctf_mode=True (see GPT_OSS_ENHANCER.py line 786-790)
-                if isinstance(results, dict) and "suggested_answer" in results:
-                    return results  # Already CTF format
-                # If still in findings format, extract CTF data
-                elif isinstance(results, dict) and "findings" in results:
-                    findings = results.get("findings", [])
-                    for finding in findings:
-                        if isinstance(finding, dict) and "_ctf_analysis" in finding:
-                            return finding["_ctf_analysis"]
-            
-            # Threat hunt mode - enrich findings
-            try:
-                import UTILITIES
-                enriched, summary = UTILITIES.enrich_findings_with_entities_and_vectors(results.get("findings", []))
-                results["findings"] = enriched
-                results["entity_summary"] = summary
-            except Exception:
-                pass
-            return results
-        else:
-            # Use OpenAI API
-            print(f"{Fore.LIGHTCYAN_EX}Using OpenAI API model: {openai_model}...{Fore.RESET}")
-            response = openai_client.chat.completions.create(
-                model=openai_model,
-                messages=messages,
-                response_format={"type": "json_object"}
-            )
 
-            results = json.loads(response.choices[0].message.content)
-            
-            # Format-aware routing: Parse CTF format if mode is 'ctf'
-            if investigation_context and investigation_context.get('mode') == 'ctf':
-                import RESPONSE_PARSER
-                results = RESPONSE_PARSER.parse_response(response.choices[0].message.content, "ctf")
-            
-            return results
+            should_chunk, input_tokens, threshold = _should_chunk_messages(model, messages)
+            if should_chunk and not is_ctf:
+                print(f"{Fore.LIGHTCYAN_EX}Large dataset detected (~{input_tokens:,} tokens) - Using chunked processing{Fore.RESET}")
+                print(f"{Fore.LIGHTBLACK_EX}Model limit: {TIME_ESTIMATOR.get_model_context_limit(model):,} | Threshold: {threshold:,}{Fore.RESET}")
+                chunk_size = int(TIME_ESTIMATOR.get_model_context_limit(model) * 0.8)
+                results = _chunk_and_process_local_model(enhancer, messages, model, max_lines, chunk_size)
+            else:
+                # CTF mode: the caller already sampled the data to fit; one pass keeps row numbers intact
+                results = enhancer.enhanced_hunt(messages, model_name=model, max_lines=max_lines,
+                                                 investigation_context=investigation_context)
 
+            if is_ctf:
+                return _extract_ctf(results)
+            return _enrich(results)
+
+        # ── Cloud (OpenAI or Claude) ──
+        provider = LLM_ROUTER.provider_of(model)
+        print(f"{Fore.LIGHTCYAN_EX}Using {provider} model: {model}...{Fore.RESET}")
+        text = LLM_ROUTER.chat(messages, model, json_mode=True, temperature=0.1,
+                               purpose="ctf_analysis" if is_ctf else "threat_hunt")
+        results = LLM_ROUTER.extract_json(text)
+        if is_ctf:
+            import RESPONSE_PARSER
+            return RESPONSE_PARSER.parse_response(results if results else text, "ctf")
+        if "findings" not in results:
+            results = {"findings": results.get("findings", []) if isinstance(results, dict) else []}
+        return _enrich(results)
+
+    except LLM_ROUTER.PromptTooLargeError as e:
+        print(f"{Fore.LIGHTRED_EX}{Style.BRIGHT}🚨 Prompt too large for {model}:{Style.RESET_ALL} {e}")
+        print(f"{Fore.WHITE}Narrow the query (one device, shorter time range, fewer fields) and retry.\n")
+        return None
     except RateLimitError as e:
-        error_msg = str(e)
-
-        # Print dark red warning
         print(f"{Fore.LIGHTRED_EX}{Style.BRIGHT}🚨ERROR: Rate limit or token overage detected!{Style.RESET_ALL}")
-        print(f"{Fore.LIGHTRED_EX}{Style.BRIGHT}The input was too large for this model or hit rate limits.")
-        print(f"{Style.RESET_ALL}——————————\nRaw Error:\n{error_msg}\n——————————")
-        print(f"{Fore.WHITE}Suggestions:")
-        print(f"- Use fewer logs or reduce input size.")
-        print(f"- Switch to a model with a larger context window.")
-        print(f"- Retry later if rate-limited.\n")
-
-        return None  # You can also choose to raise again or exit
-
+        print(f"{Style.RESET_ALL}——————————\nRaw Error:\n{e}\n——————————")
+        print(f"{Fore.WHITE}Suggestions: use fewer logs, switch to a larger-window model, or retry later.\n")
+        return None
     except OpenAIError as e:
         print(f"{Fore.RED}Unexpected OpenAI API error:\n{e}")
         return None
+    except Exception as e:
+        print(f"{Fore.RED}Model call failed ({type(e).__name__}): {e}{Fore.RESET}")
+        return None
 
-# Extract and parse the function call selected by the LLM.
-# This tool call is part of OpenAI's function calling feature, where the model chooses a tool (function)
-# from the provided list, and returns the arguments it wants to use to call it.
-# In this case, the function selected queries log data from Microsoft Defender via Log Analytics.
-#
-# Docs: https://platform.openai.com/docs/guides/function-calling
+
 def get_query_context(openai_client, user_message, model):
-    
+    """
+    Turn the analyst's natural-language request into query_log_analytics arguments.
+    OpenAI models use native tool calling; Claude and the local model return the same
+    argument object as JSON constrained by the tool's parameter schema - so the
+    threat-hunt flow now works fully offline (no more gpt-4o-mini detour).
+    """
     print(f"{Fore.LIGHTGREEN_EX}\nDeciding log search parameters based on user request...\n")
+    if openai_client is not None:
+        LLM_ROUTER.set_openai_client(openai_client)
 
     system_message = PROMPT_MANAGEMENT.SYSTEM_PROMPT_TOOL_SELECTION
+    model = LLM_ROUTER.resolve(model)
+    tool = PROMPT_MANAGEMENT.TOOLS[0]["function"]
 
-    # Handle local-mix model - convert to actual model for query planning
-    if model == "local-mix":
-        # For query planning, we still need OpenAI function calling
-        # So route to gpt-4o-mini (cheap and fast)
-        print(f"{Fore.YELLOW}Note: Using gpt-4o-mini for query planning (local-mix uses hybrid model for analysis){Fore.RESET}")
-        query_model = "gpt-4o-mini"
-    # If Ollama model selected, use a capable OpenAI model for tool selection
-    # (Ollama doesn't support function calling well)
-    elif model in {"qwen", "gpt-oss:20b"}:
-        print(f"{Fore.YELLOW}Note: Using gpt-4o-mini for query planning (Local models don't support function calling){Fore.RESET}")
-        query_model = "gpt-4o-mini"
-    else:
-        query_model = model
+    if LLM_ROUTER.is_openai(model):
+        response = LLM_ROUTER.openai_client().chat.completions.create(
+            model=model,
+            messages=[system_message, user_message],
+            tools=PROMPT_MANAGEMENT.TOOLS,
+            tool_choice="required"
+        )
+        tool_calls = response.choices[0].message.tool_calls or []
+        if not tool_calls:
+            raise ValueError("The model did not choose a query tool - rephrase the request.")
+        return json.loads(tool_calls[0].function.arguments)
 
-    response = openai_client.chat.completions.create(
-        model=query_model,
-        messages=[system_message, user_message],
-        tools=PROMPT_MANAGEMENT.TOOLS,
-        tool_choice="required"
+    # Claude / local: same contract, expressed as a JSON schema
+    schema = dict(tool["parameters"])
+    schema.setdefault("additionalProperties", False)
+    instructions = (
+        f"{system_message['content']}\n\nTOOL: {tool['name']}\n{tool['description']}\n\n"
+        "Respond ONLY with the JSON object of arguments for this tool."
     )
-
-    #TODO: Fix this (if there are no returns)
-    function_call = response.choices[0].message.tool_calls[0]
-    args = json.loads(function_call.function.arguments)
-
-    return args  # or return function_call, args
+    args = LLM_ROUTER.chat_json(
+        [{"role": "system", "content": instructions}, user_message],
+        model, schema=schema, temperature=0, think=False, purpose="query_planning",
+    )
+    if not args:
+        raise ValueError("The model did not return query arguments - rephrase the request.")
+    return args
 
 
 def detect_time_field(log_analytics_client, workspace_id, table_name):

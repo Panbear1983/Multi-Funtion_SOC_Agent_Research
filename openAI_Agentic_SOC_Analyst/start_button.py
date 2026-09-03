@@ -21,7 +21,7 @@ import OLLAMA_CLIENT
 # Initialize
 init(autoreset=True)
 
-# Pre-flight: verify Artemis volume and all Ollama models before anything else
+# Pre-flight: verify Artemis volume and the local Ollama model before anything else
 try:
     print(Fore.LIGHTGREEN_EX + OLLAMA_CLIENT.verify_artemis_and_ollama() + Fore.RESET)
 except RuntimeError as e:
@@ -31,7 +31,7 @@ except RuntimeError as e:
 
 # Build Azure Log Analytics Client
 try:
-    credential = DefaultAzureCredential()
+    credential = DefaultAzureCredential(process_timeout=60)  # az CLI token fetch takes 6s+ on this Mac; default 10s timeout caused startup failures
     law_client = LogsQueryClient(credential=credential)
     
     # Test authentication and permissions
@@ -64,8 +64,10 @@ except Exception as e:
     print(f"{Fore.RED}Failed to create Azure Log Analytics client: {e}{Fore.RESET}")
     exit(1)
 
-# Build OpenAI client
+# Build OpenAI client and register it with the model router (Claude/local need no client)
 openai_client = OpenAI(api_key=_keys.OPENAI_API_KEY)
+import LLM_ROUTER
+LLM_ROUTER.set_openai_client(openai_client)
 
 # Welcome banner
 print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")

@@ -54,6 +54,26 @@ AZURE_TABLE_SCHEMAS = {
         ]
     },
     
+    "DeviceEvents": {
+        "description": "Miscellaneous MDE device events (named pipes, scheduled tasks, LSASS access, PowerShell commands, AMSI, etc.)",
+        "fields": {
+            "TimeGenerated": {"type": "datetime", "description": "Timestamp when event was generated", "required": True, "example": "datetime(2026-03-15T10:00:00Z)"},
+            "DeviceName": {"type": "string", "description": "Name of the device/computer", "required": True, "example": "azuki-adminpc"},
+            "ActionType": {"type": "string", "description": "Event type, e.g. NamedPipeEvent, ScheduledTaskCreated, PowerShellCommand, LdapSearch", "required": True, "example": "NamedPipeEvent"},
+            "FileName": {"type": "string", "description": "File involved in the event (if any)", "required": False, "example": "beacon.exe"},
+            "FolderPath": {"type": "string", "description": "Folder of the file involved", "required": False, "example": "C:\\Windows\\Temp"},
+            "AccountName": {"type": "string", "description": "Account that triggered the event", "required": False, "example": "svc_admin"},
+            "InitiatingProcessCommandLine": {"type": "string", "description": "Command line of the process that caused the event", "required": False, "example": "beacon.exe"},
+            "InitiatingProcessFileName": {"type": "string", "description": "Process that caused the event", "required": False, "example": "powershell.exe"},
+            "AdditionalFields": {"type": "dynamic (JSON)", "description": "Event-specific JSON, e.g. {\"PipeName\":\"\\\\.\\pipe\\...\"} for NamedPipeEvent - parse with parse_json() / tostring(AdditionalFields.PipeName)", "required": False, "example": "{\"PipeName\":\"\\\\device\\namedpipe\\msagent_ab\"}"}
+        },
+        "common_queries": [
+            "Named pipes: | where ActionType == \"NamedPipeEvent\" | extend PipeName = tostring(parse_json(AdditionalFields).PipeName)",
+            "Filter by device: | where DeviceName contains \"hostname\"",
+            "Time range: | where TimeGenerated between (datetime(...) .. datetime(...))"
+        ]
+    },
+
     "DeviceProcessEvents": {
         "description": "Process execution events on Windows devices",
         "fields": {
@@ -358,3 +378,32 @@ def generate_kql_rules_prompt():
     
     return prompt
 
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# COMPACT TABLE DIRECTORY (for prompts - a few hundred tokens, not a schema dump)
+# ═══════════════════════════════════════════════════════════════════════
+
+TABLE_DIRECTORY = {
+    "DeviceLogonEvents":    "logons (RDP/RemoteInteractive, network, interactive) - AccountName, DeviceName, ActionType, LogonType, RemoteIP, RemoteDeviceName",
+    "DeviceProcessEvents":  "process starts - DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessCommandLine, SHA256",
+    "DeviceNetworkEvents":  "network connections - DeviceName, RemoteIP, RemotePort, RemoteUrl, InitiatingProcessCommandLine, ActionType",
+    "DeviceFileEvents":     "file create/modify/delete - DeviceName, FileName, FolderPath, ActionType, SHA256, InitiatingProcessAccountName, InitiatingProcessCommandLine",
+    "DeviceRegistryEvents": "registry changes - DeviceName, RegistryKey, RegistryValueName, RegistryValueData, ActionType, InitiatingProcessAccountName",
+    "DeviceEvents":         "other MDE events (NamedPipeEvent, ScheduledTaskCreated, PowerShellCommand...) - ActionType, AdditionalFields (JSON, e.g. PipeName)",
+    "AlertInfo":            "Defender alerts - AlertId, Title, Severity, Category, DetectionSource",
+    "AlertEvidence":        "alert entities - AlertId, EntityType, EvidenceRole, FileName, RemoteIP, AccountName",
+    "SigninLogs":           "Entra ID sign-ins (cloud, NOT RDP) - UserPrincipalName, AppDisplayName, IPAddress, ResultType",
+    "AuditLogs":            "Entra ID directory changes - OperationName, InitiatedBy, TargetResources",
+    "AzureActivity":        "Azure control-plane operations - OperationNameValue, Caller, CallerIpAddress, ResourceGroup",
+    "AzureNetworkAnalytics_CL": "NSG flow logs - FlowType_s, SrcPublicIPs_s, DestIP_s, DestPort_d, VM_s",
+}
+
+
+def table_directory_prompt():
+    """One line per table: which table holds what, with its key fields. ~350 tokens."""
+    lines = ["AVAILABLE LOG TABLES (Microsoft Defender for Endpoint / Sentinel, all have TimeGenerated):"]
+    for t, d in TABLE_DIRECTORY.items():
+        lines.append(f"- {t}: {d}")
+    lines.append("Note: RDP logons are DeviceLogonEvents with LogonType == 'RemoteInteractive' - not SigninLogs.")
+    return "\n".join(lines)

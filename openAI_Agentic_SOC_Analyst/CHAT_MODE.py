@@ -7,7 +7,7 @@ Maintains SOC focus and session context
 import json
 import tiktoken
 from color_support import Fore, Style
-import OLLAMA_CLIENT
+import LLM_ROUTER
 import MODEL_SELECTOR
 
 class SocChatSession:
@@ -15,7 +15,7 @@ class SocChatSession:
         self.findings = findings
         self.log_data_summary = log_data_summary
         self.query_context = query_context
-        self.model_name = model_name
+        self.model_name = LLM_ROUTER.resolve(model_name)
         self.openai_client = openai_client
         self.conversation_history = []
         self.conversation_summary = []  # Store summaries of older conversations
@@ -139,29 +139,9 @@ Summary:"""
                 }
             ]
             
-            is_offline = MODEL_SELECTOR.is_offline_model(self.model_name)
-            
-            if is_offline:
-                # Use Ollama for local models
-                summary_text = OLLAMA_CLIENT.chat(
-                    messages=summary_messages,
-                    model_name=self.model_name,
-                    json_mode=False,
-                    timeout=60
-                )
-            else:
-                # Use OpenAI for cloud models
-                if not self.openai_client:
-                    return ""  # Can't summarize without client
-                
-                response = self.openai_client.chat.completions.create(
-                    model=self.model_name,
-                    messages=summary_messages,
-                    max_tokens=200,  # Keep summary short
-                    temperature=0.3  # Lower temperature for more factual summaries
-                )
-                summary_text = response.choices[0].message.content
-            
+            summary_text = LLM_ROUTER.chat(summary_messages, self.model_name, json_mode=False,
+                                           temperature=0.3, think=False, max_tokens=400,
+                                           timeout=120, purpose="chat_summary")
             return summary_text.strip()
         except Exception as e:
             print(f"{Fore.YELLOW}⚠️  Summarization failed: {e}. Using fallback.{Fore.RESET}")
@@ -264,45 +244,16 @@ Summary:"""
             
             # Get response from model
             try:
-                print(f"{Fore.YELLOW}🤔 {self.model_name} is thinking... (streaming){Fore.RESET}")
+                print(f"{Fore.YELLOW}🤔 {self.model_name} is thinking...{Fore.RESET}")
                 accum = ""
-                
-                # Check if model is OpenAI or Ollama
-                is_offline = MODEL_SELECTOR.is_offline_model(self.model_name)
-                
-                if is_offline:
-                    # Use Ollama for local models
-                    try:
-                        for line in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
-                            text = line if isinstance(line, str) else ""
-                            accum += text
-                            print(text, end="", flush=True)
-                        print()
-                    except KeyboardInterrupt:
-                        print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
-                else:
-                    # Use OpenAI API for cloud models
-                    if not self.openai_client:
-                        print(f"{Fore.RED}Error: OpenAI client not available for model {self.model_name}{Fore.RESET}")
-                        raise Exception("OpenAI client required for cloud models")
-                    
-                    from openai import OpenAIError
-                    try:
-                        stream = self.openai_client.chat.completions.create(
-                            model=self.model_name,
-                            messages=messages,
-                            stream=True
-                        )
-                        for chunk in stream:
-                            if chunk.choices[0].delta.content:
-                                content = chunk.choices[0].delta.content
-                                accum += content
-                                print(content, end="", flush=True)
-                        print()
-                    except KeyboardInterrupt:
-                        print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
-                    except OpenAIError as e:
-                        raise Exception(f"OpenAI API error: {e}")
+                try:
+                    for piece in LLM_ROUTER.chat_stream(messages, self.model_name, temperature=0.3,
+                                                        think=True, purpose="chat"):
+                        accum += piece
+                        print(piece, end="", flush=True)
+                    print()
+                except KeyboardInterrupt:
+                    print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
                 
                 response = accum
 

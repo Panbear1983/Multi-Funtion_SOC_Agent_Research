@@ -5,6 +5,9 @@ Major redesign: Human writes KQL, LLM provides guidance
 Canonical implementation: This module is the single active CTF Hunt Mode.
 Legacy variants have been archived under `archive/` and are no longer
 imported or maintained.
+
+Model access goes through LLM_ROUTER (local qwen3:8b, OpenAI, or Claude) so the
+same code path serves every provider and every call is logged.
 """
 
 import json
@@ -13,63 +16,22 @@ import glob
 import time
 from datetime import timedelta, datetime
 
-# #region agent log
-_DEBUG_LOG_PATH = "/Users/peter/GitHub/Multi-Funtion_SOC_Agent_Research/openAI_Agentic_SOC_Analyst/.cursor/debug-74b894.log"
-def _dbg(loc, msg, data, hid):
-    try:
-        with open(_DEBUG_LOG_PATH, "a") as _f:
-            _f.write(json.dumps({"sessionId": "74b894", "timestamp": int(time.time() * 1000), "location": loc, "message": msg, "data": data, "hypothesisId": hid}) + "\n")
-    except Exception:
-        pass
-# #endregion
 from color_support import Fore
 import CTF_SESSION_MANAGER
 import GUARDRAILS
-import OLLAMA_CLIENT
+import LLM_ROUTER
 import AZURE_SCHEMA_REFERENCE
 import pandas as pd
 
 
 def is_local_model(model_name):
-    """Determine if a model is local/Ollama or cloud/OpenAI"""
-    if model_name is None:
-        return False
-    
-    # Check direct match first
-    if model_name in GUARDRAILS.ALLOWED_MODELS:
-        model_info = GUARDRAILS.ALLOWED_MODELS[model_name]
-        return (model_info.get("cost_per_million_input", 0) == 0.00 and 
-                model_info.get("cost_per_million_output", 0) == 0.00)
-    
-    # Check if it's an Ollama model name that maps to an allowed model
-    # (e.g., "qwen3:8b" maps to "qwen", "gpt-oss:20b" maps to itself)
-    ollama_to_allowed_mapping = {
-        "qwen3:8b": "qwen",
-        "gpt-oss:20b": "gpt-oss:20b"
-    }
-    
-    if model_name in ollama_to_allowed_mapping:
-        mapped_name = ollama_to_allowed_mapping[model_name]
-        if mapped_name in GUARDRAILS.ALLOWED_MODELS:
-            model_info = GUARDRAILS.ALLOWED_MODELS[mapped_name]
-            return (model_info.get("cost_per_million_input", 0) == 0.00 and 
-                    model_info.get("cost_per_million_output", 0) == 0.00)
-    
-    return False
+    """Determine if a model is local/Ollama (any alias) or cloud"""
+    return LLM_ROUTER.is_local(model_name) if model_name else False
 
 
 def get_ollama_model_name(model_name):
-    """Map friendly model names to Ollama model names"""
-    if model_name is None:
-        return None
-    # local-mix is handled by HYBRID_ENGINE, not Ollama directly
-    if model_name == "local-mix":
-        return "local-mix"  # Special case - handled by hybrid engine
-    ollama_mapping = {
-        "qwen": "qwen3:8b",
-        "gpt-oss:20b": "gpt-oss:20b"
-    }
-    return ollama_mapping.get(model_name, model_name)
+    """Map friendly / legacy model names to the canonical registry name"""
+    return LLM_ROUTER.resolve(model_name)
 
 
 def run_ctf_hunt(openai_client, law_client, workspace_id, timerange_hours, start_date, end_date,
@@ -567,25 +529,29 @@ def bot_interpretation_stage(flag_intel, session, openai_client, model):
     # Get session context (previous flags)
     llm_context = session.get_llm_context(current_flag_config=flag_intel, context_type="compact")
     
-    # Build interpretation prompt
-    interpretation_prompt = f"""You are a cybersecurity analyst advisor helping with a CTF investigation.
+    # The model does not reliably know the MDE schema (it guessed SigninLogs / "RDPLogon"
+    # for RDP logons when asked cold) - so the real table directory goes in every time.
+    schema_directory = AZURE_SCHEMA_REFERENCE.table_directory_prompt()
+
+    interpretation_prompt = f"""You are a cybersecurity analyst COACH helping a human investigator with a CTF threat hunt.
+The human writes every KQL query and submits every answer themselves. You guide, you do not solve.
+
+{schema_directory}
 
 {llm_context}
 
 CURRENT FLAG INTEL:
 {flag_intel['raw_intel']}
 
-Your role is ADVISORY ONLY. Do NOT generate KQL queries. Instead:
+Your role is ADVISORY ONLY. Do NOT generate KQL queries and do NOT guess the final answer. Instead:
 
 1. EXPLAIN what this flag is asking for in plain English
-2. SUGGEST which Azure log table to query (DeviceLogonEvents, DeviceProcessEvents, etc.)
-3. RECOMMEND which fields should be projected in the query
-4. IDENTIFY what patterns or conditions to look for
+2. SUGGEST which log table to query (use the table directory above - exact table names)
+3. RECOMMEND which fields should be projected in the query (exact field names from the directory)
+4. IDENTIFY what patterns or conditions to look for (filters, keywords, time window, ordering)
 5. MENTION any previous flag answers that could be used as filters
 
-Provide concise, practical guidance to help the human write their own KQL query.
-
-Format your response as:
+Be concise and practical. Format your response as:
 INTERPRETATION: [What the flag is asking]
 RECOMMENDED TABLE: [Table name]
 KEY FIELDS: [List of fields to include]
@@ -593,66 +559,29 @@ SEARCH CRITERIA: [What to filter/look for]
 CORRELATION: [How to use previous flags, if applicable]
 """
     
-    # Check if model is available
     if model is None:
         print(f"{Fore.YELLOW}No model selected. Skipping bot interpretation.{Fore.RESET}\n")
-        return {
-            'interpretation': "No interpretation available (model not selected)",
-            'flag_intel': flag_intel
-        }
+        return {'interpretation': "No interpretation available (model not selected)", 'flag_intel': flag_intel}
     
-    print(f"{Fore.LIGHTBLACK_EX}LLM analyzing flag intel...{Fore.RESET}\n")
+    print(f"{Fore.LIGHTBLACK_EX}{LLM_ROUTER.resolve(model)} is reading the flag intel...{Fore.RESET}\n")
     
     try:
-        # Get LLM interpretation - use selected model directly
-        if is_local_model(model):
-            model_name = get_ollama_model_name(model)
-            # For local-mix, HYBRID_ENGINE handles it, but for simple interpretation use first model
-            if model == "local-mix":
-                # local-mix uses hybrid engine, but for simple text interpretation, use qwen (faster)
-                # This is acceptable as it's just guidance, not final analysis
-                model_name = "qwen3:8b"
-            interpretation = OLLAMA_CLIENT.chat(
-                messages=[{"role": "user", "content": interpretation_prompt}],
-                model_name=model_name,
-                json_mode=False,
-                temperature=0.3
-            )
-        else:
-            # Try with temperature first, fallback to default if model doesn't support custom temperature
-            try:
-                response = openai_client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": interpretation_prompt}],
-                    temperature=0.3
-                )
-                interpretation = response.choices[0].message.content
-            except Exception as temp_error:
-                # Check if error is about temperature not being supported
-                error_str = str(temp_error)
-                if "temperature" in error_str.lower() and ("unsupported" in error_str.lower() or "does not support" in error_str.lower()):
-                    # Retry without temperature parameter (uses default)
-                    response = openai_client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": interpretation_prompt}]
-                    )
-                    interpretation = response.choices[0].message.content
-                else:
-                    # Re-raise if it's a different error
-                    raise
-        
+        if openai_client is not None:
+            LLM_ROUTER.set_openai_client(openai_client)
+        # Free-text advisory: thinking ON for the local model (worth ~30 s here - it picked the
+        # right table only with thinking), moderate temperature, generous output budget.
+        interpretation = LLM_ROUTER.chat(
+            [{"role": "user", "content": interpretation_prompt}],
+            model, json_mode=False, temperature=0.3, think=True, purpose="ctf_interpretation",
+        )
         print(f"{Fore.LIGHTCYAN_EX}BOT'S GUIDANCE:{Fore.RESET}\n")
         print(f"{Fore.WHITE}{interpretation.strip()}{Fore.RESET}\n")
         print(f"{Fore.LIGHTCYAN_EX}{'─'*70}{Fore.RESET}\n")
-        
     except Exception as e:
         print(f"{Fore.RED}Error getting bot interpretation: {e}{Fore.RESET}\n")
         interpretation = "No interpretation available"
     
-    return {
-        'interpretation': interpretation,
-        'flag_intel': flag_intel
-    }
+    return {'interpretation': interpretation, 'flag_intel': flag_intel}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -842,25 +771,22 @@ def llm_result_analysis_stage(results_csv, flag_intel, kql_query, session,
     # Count rows for large dataset detection
     lines = results_csv.split('\n')
     row_count = len([l for l in lines if l.strip()]) - 1  # Exclude header
-    
-    # For large datasets, use smart sampling
+
+    # Detect the table from the ORIGINAL header (sampling prepends a summary block)
+    table_name = _detect_table_from_csv(results_csv)
+
+    # Fit the data to the model: the local model's practical window is small and slow,
+    # cloud models can take far more. Rows keep their original RowId through sampling.
     original_csv = results_csv
-    if row_count > 100:
-        print(f"{Fore.YELLOW}⚠️  Large dataset detected ({row_count} rows). Using intelligent sampling...{Fore.RESET}")
-        print(f"{Fore.WHITE}   Strategy: Prioritizing rows with relevant fields (ProcessCommandLine, FolderPath, RegistryKey, encoded data){Fore.RESET}\n")
-        
-        results_csv = _smart_sample_csv_for_ctf(
-            results_csv, 
-            flag_intel.get('objective', ''),
-            max_chars=50000  # ~500-1000 rows depending on row length
-        )
-        
-        sampled_lines = len(results_csv.split('\n')) - 1
+    max_chars = _ctf_log_budget_chars(model)
+    if len(results_csv) > max_chars or row_count > 100:
+        print(f"{Fore.YELLOW}⚠️  {row_count} rows ({len(results_csv):,} chars) - sampling to fit {LLM_ROUTER.resolve(model)} ({max_chars:,} chars max){Fore.RESET}")
+        print(f"{Fore.WHITE}   Strategy: keep rows matching the flag's format/keywords first, then a spread of the rest; RowId = original row number{Fore.RESET}\n")
+        results_csv = _smart_sample_csv_for_ctf(results_csv, flag_intel.get('objective', ''), max_chars=max_chars,
+                                                flag_intel=flag_intel)
+        sampled_lines = len([l for l in results_csv.split('\n') if l.strip() and not l.startswith('#')]) - 1
         print(f"{Fore.LIGHTGREEN_EX}✓ Sampled {sampled_lines} rows for analysis (from {row_count} total){Fore.RESET}")
         print(f"{Fore.LIGHTBLACK_EX}  Note: If answer not found, use interactive conversation to analyze specific row ranges{Fore.RESET}\n")
-    
-    # Detect table from CSV
-    table_name = _detect_table_from_csv(results_csv)
     
     # Get previous flags context
     previous_flags_context = session.get_llm_context(current_flag_config=flag_intel, context_type="compact")
@@ -1082,129 +1008,148 @@ Return answers in the exact format requested."""
     return llm_analysis
 
 
-def _smart_sample_csv_for_ctf(csv_data, flag_objective, max_chars=50000):
+def _ctf_log_budget_chars(model):
+    """How many characters of log data to hand the model in one CTF analysis call."""
+    m = LLM_ROUTER.resolve(model)
+    if LLM_ROUTER.is_local(m):
+        return 16_000     # ~8K tokens of CSV → ~2-3 min on this Mac; more is slower, not smarter
+    if LLM_ROUTER.is_claude(m):
+        return 120_000    # 1M window; keep the call snappy and the answer focused
+    return 60_000         # OpenAI
+
+
+FORMAT_HINT_PATTERNS = {
+    # flag "format" text → regex that matches candidate values in a row
+    "ip": r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+    "filename": r"[\w\-\. ]+\.(?:exe|dll|ps1|bat|cmd|vbs|js|zip|7z|rar|txt|kdbx|csv|docx|xlsx|pdf|lnk|log)\b",
+    "command": r"(?:powershell|cmd\.exe|certutil|curl|wget|bitsadmin|7z|tar|xcopy|robocopy|net\.exe|whoami|nltest|netstat|qwinsta|quser|procdump|rundll32|mshta|wscript|schtasks|reg\.exe|attrib)",
+    "account": r"[A-Za-z][\w\.\-]{2,}\\?[\w\.\-]*",
+    "domain": r"\b[a-z0-9\-]+(?:\.[a-z0-9\-]+)+\b",
+    "pipe": r"\\\\\.\\pipe\\[\w\-\.]+|\\pipe\\[\w\-\.]+|PipeName",
+    "base64": r"(?:-enc|-encodedcommand|-e )\s*[A-Za-z0-9+/=]{20,}|FromBase64String",
+    "path": r"[A-Za-z]:\\[^,\"]+",
+}
+
+
+def _format_family(flag_intel):
+    """Map the flag's 'format' text / objective onto FORMAT_HINT_PATTERNS keys."""
+    fmt = ((flag_intel or {}).get('format') or '').lower()
+    obj = ((flag_intel or {}).get('objective') or '').lower()
+    text = fmt + " " + obj
+    fams = []
+    if "ip" in fmt or "xxx.xxx" in fmt or "ip address" in obj:
+        fams.append("ip")
+    if "filename" in text or "file name" in text or "file " in fmt:
+        fams.append("filename")
+    if "command" in text:
+        fams.append("command")
+    if "account" in text or "username" in text or "user name" in text:
+        fams.append("account")
+    if "domain" in text or "service" in text or "url" in text:
+        fams.append("domain")
+    if "pipe" in text:
+        fams.append("pipe")
+    if "base64" in text or "decoded" in text or "encoded" in text:
+        fams.append("base64")
+    if "directory" in text or "path" in text or "folder" in text:
+        fams.append("path")
+    return fams
+
+
+def _smart_sample_csv_for_ctf(csv_data, flag_objective, max_chars=50000, flag_intel=None):
     """
-    Intelligently sample CSV data for CTF analysis:
-    1. Prioritize rows with relevant fields (ProcessCommandLine, FolderPath, RegistryKey)
-    2. Include rows with encoded/obfuscated data
-    3. Ensure header + representative sample
-    4. Add summary statistics
-    
-    Args:
-        csv_data: Full CSV string
-        flag_objective: The CTF flag objective/question
-        max_chars: Maximum characters to include in sampled CSV
-    
-    Returns:
-        Sampled CSV string with summary header
+    Deterministically sample CSV rows for one CTF analysis call.
+
+    1. A RowId column (original 1-based row number) is added so the model's evidence
+       rows and later "analyze rows N-M" requests refer to the same numbering.
+    2. Rows are scored: matches for the flag's expected format (IP, filename, command...)
+       + objective/hint keywords + generic CTF signals (encoded data, suspicious paths).
+       Highest scores go first; ties keep original order (no randomness).
+    3. The remaining budget is filled with an even spread of the other rows so time
+       coverage is preserved.
+    4. A short summary header tells the model what it is looking at.
     """
-    lines = csv_data.split('\n')
+    import re
+    lines = [l for l in csv_data.split('\n') if l.strip()]
     if len(lines) < 2:
         return csv_data
-    
+
     header = lines[0]
     data_lines = lines[1:]
-    total_rows = len([l for l in data_lines if l.strip()])
-    
-    if total_rows == 0:
-        return csv_data
-    
-    # Keywords that indicate relevant data for CTF
-    relevant_keywords = [
-        'base64', 'encoded', 'powershell', 'cmd', 'reg', 'registry',
-        'temp', 'public', 'downloads', 'appdata', 'obfuscated',
-        'executionpolicy', 'bypass', 'hidden', 'encodedcommand',
-        'invoke', 'downloadstring', 'webrequest', 'iex', 'frombase64string',
-        'decode', 'hex', 'url', 'percent', 'unicode'
-    ]
-    
-    # Priority rows: rows with relevant fields or keywords
-    priority_rows = []
-    normal_rows = []
-    
-    for idx, line in enumerate(data_lines):
-        if not line.strip():
-            continue
-        
-        line_lower = line.lower()
-        # Check if row contains relevant keywords
-        is_priority = any(keyword in line_lower for keyword in relevant_keywords)
-        
-        # Check for encoded data patterns
-        has_encoding = any([
-            ' -enc ' in line_lower,
-            ' -encodedcommand ' in line_lower,
-            'base64' in line_lower,
-            'frombase64string' in line_lower,
-            len([c for c in line if c.isalnum() and len(c) > 30]) > 0  # Long encoded strings
-        ])
-        
-        # Check for suspicious paths
-        has_suspicious_path = any([
-            'temp' in line_lower,
-            'public' in line_lower,
-            'downloads' in line_lower,
-            'appdata' in line_lower,
-            '\\users\\' in line_lower and 'public' in line_lower
-        ])
-        
-        if is_priority or has_encoding or has_suspicious_path:
-            priority_rows.append((idx, line))
-        else:
-            normal_rows.append((idx, line))
-    
-    # Build sampled CSV
-    sampled_lines = [header]
-    char_count = len(header)
-    
-    # Add ALL priority rows (up to char limit)
-    priority_added = 0
-    for idx, line in priority_rows:
-        if char_count + len(line) + 1 > max_chars:  # +1 for newline
+    total_rows = len(data_lines)
+
+    # Keywords from the objective + hints (words of 4+ chars, minus stop words)
+    stop = {"what", "which", "that", "this", "with", "from", "into", "identify", "question", "answer",
+            "used", "were", "there", "their", "flag", "find", "search", "look", "field", "query", "table"}
+    kw_text = (flag_objective or "") + " " + " ".join((flag_intel or {}).get('hints', []) or [])
+    keywords = {w for w in re.findall(r"[a-z0-9_\-\.]{4,}", kw_text.lower()) if w not in stop}
+    families = _format_family(flag_intel or {'objective': flag_objective, 'format': ''})
+    fam_res = [re.compile(FORMAT_HINT_PATTERNS[f], re.IGNORECASE) for f in families if f in FORMAT_HINT_PATTERNS]
+
+    generic = ['base64', 'encodedcommand', ' -enc ', 'frombase64string', 'bypass', 'hidden', 'downloadstring',
+               'invoke-', 'iex', 'webrequest', '\\temp\\', '\\public\\', 'downloads', 'appdata', 'programdata',
+               'registry', 'certutil', 'rundll32', 'mshta', 'schtasks', '.kdbx', 'password']
+
+    scored = []
+    for idx, line in enumerate(data_lines, start=1):
+        low = line.lower()
+        score = 0
+        for r in fam_res:
+            if r.search(line):
+                score += 3
+        score += sum(2 for k in keywords if k in low)
+        score += sum(1 for g in generic if g in low)
+        if re.search(r"[A-Za-z0-9+/]{40,}={0,2}", line):   # long base64-looking token
+            score += 2
+        scored.append((score, idx, line))
+
+    priority = [t for t in sorted(scored, key=lambda t: (-t[0], t[1])) if t[0] > 0]
+    chosen = {}
+    used = len(header) + 6
+    for score, idx, line in priority:
+        if used + len(line) + 8 > max_chars:
             break
-        sampled_lines.append(line)
-        char_count += len(line) + 1
-        priority_added += 1
-    
-    # Add representative sample of normal rows
-    remaining_chars = max_chars - char_count
-    sample_size = min(len(normal_rows), max(10, remaining_chars // 200))  # ~10-50 normal rows
-    
-    import random
-    if normal_rows and sample_size > 0:
-        sampled_normal = random.sample(normal_rows, min(sample_size, len(normal_rows)))
-        for idx, line in sampled_normal:
-            if char_count + len(line) + 1 > max_chars:
-                break
-            sampled_lines.append(line)
-            char_count += len(line) + 1
-    
-    sampled_csv = '\n'.join(sampled_lines)
-    sampled_row_count = len(sampled_lines) - 1  # Exclude header
-    
-    # Add summary header
+        chosen[idx] = line
+        used += len(line) + 8
+
+    # Fill the rest with an even spread of unchosen rows (keeps timeline coverage)
+    rest = [t for t in scored if t[1] not in chosen]
+    if rest and used < max_chars:
+        avg = max(1, sum(len(t[2]) for t in rest) // len(rest)) + 8
+        room = max(0, (max_chars - used) // avg)
+        if room > 0:
+            step = max(1, len(rest) // room)
+            for _, idx, line in rest[::step]:
+                if used + len(line) + 8 > max_chars:
+                    break
+                chosen[idx] = line
+                used += len(line) + 8
+
+    ordered = sorted(chosen.items())
+    sampled_lines = ["RowId," + header] + [f"{idx},{line}" for idx, line in ordered]
+    n_priority = sum(1 for idx in chosen if scored[idx - 1][0] > 0)
+
     summary = f"""# CSV DATA SUMMARY
 # Total Rows in Dataset: {total_rows}
-# Priority Rows (with relevant fields/encoding): {len(priority_rows)}
-# Normal Rows: {len(normal_rows)}
-# Sampled Rows: {sampled_row_count} (Priority: {priority_added}, Normal: {sampled_row_count - priority_added})
-# Sampling Strategy: Prioritized rows with ProcessCommandLine/FolderPath/RegistryKey/encoded data
-# 
-# IMPORTANT: Analyze ALL rows systematically. If answer not in sampled data, 
-# request specific row ranges for deeper analysis (e.g., "analyze rows 150-200").
+# Rows included here: {len(ordered)} (matched flag format/keywords: {n_priority}; spread sample: {len(ordered) - n_priority})
+# RowId = the row's number in the FULL result set - cite it as evidence and use it to request more rows.
+# Format families searched: {', '.join(families) if families else 'none detected'}
 #
 """
-    
-    return summary + sampled_csv
+    return summary + "\n".join(sampled_lines)
 
 
 def _detect_table_from_csv(csv_text):
     """Detect which table the CSV data came from based on column headers"""
-    lines = csv_text.strip().split('\n')
+    lines = [l for l in csv_text.strip().split('\n') if l.strip() and not l.startswith('#')]
     if len(lines) < 2:
         return "Unknown"
     
     headers = lines[0].lower()
+
+    # DeviceEvents is the only table with AdditionalFields - decide it before the loose matching below
+    if 'additionalfields' in headers:
+        return 'DeviceEvents'
     
     # Table signatures (unique field combinations)
     table_signatures = {
@@ -1222,13 +1167,18 @@ def _detect_table_from_csv(csv_text):
         'AzureNetworkAnalyticsIPDetails_CL': ['publicipaddress_s', 'publicipdetails_s', 'organization_s']
     }
     
-    # Find best match
+    # Best match wins (most signature fields present), not the first "close enough" one -
+    # a logon CSV used to be labelled DeviceNetworkEvents because RemoteIP matched first.
+    header_fields = {h.strip().strip('"') for h in headers.split(',')}
+    best, best_score = "Unknown", (0, 0.0)
     for table_name, signature_fields in table_signatures.items():
-        matches = sum(1 for field in signature_fields if field in headers)
-        if matches >= len(signature_fields) - 1:  # Allow 1 missing field
-            return table_name
-    
-    return "Unknown"
+        matches = sum(1 for field in signature_fields if field in header_fields or field in headers)
+        if matches == 0 or matches < len(signature_fields) - 1:
+            continue
+        score = (matches, matches / len(signature_fields))
+        if score > best_score:
+            best, best_score = table_name, score
+    return best
 
 
 def display_llm_analysis(llm_analysis):
@@ -1290,24 +1240,24 @@ class CtfChatSession:
         self.flag_intel = flag_intel
         self.kql_query = kql_query
         self.session = session
-        self.model_name = model_name
+        self.model_name = LLM_ROUTER.resolve(model_name)
         self.openai_client = openai_client
+        if openai_client is not None:
+            LLM_ROUTER.set_openai_client(openai_client)
         self.bot_guidance = bot_guidance  # Bot's intel interpretation from Stage 2
         self.conversation_history = []
         self.conversation_summary = []  # Store summaries of older conversations
         
-        # Safety limits - dynamic based on model capabilities
-        import TIME_ESTIMATOR
-        model_context_limit = TIME_ESTIMATOR.get_model_context_limit(model_name)
-        # Set limits based on model context window (larger models get more turns/tokens)
+        # Budgets from the model's REAL window (LLM_ROUTER), leaving room for the reply
+        model_context_limit = LLM_ROUTER.context_limit(self.model_name)
         if model_context_limit >= 100000:
-            self.MAX_TURNS = 15  # Large context models (Qwen, GPT-4o, etc.)
+            self.MAX_TURNS = 15
             self.MAX_TOKENS = min(100000, int(model_context_limit * 0.8))
-            self.RECENT_MESSAGES_TO_KEEP = 6  # Keep last 6 exchanges (3 Q&A pairs)
+            self.RECENT_MESSAGES_TO_KEEP = 6
         else:
-            self.MAX_TURNS = 5   # Smaller context models (GPT-OSS, etc.)
-            self.MAX_TOKENS = min(25000, int(model_context_limit * 0.8))
-            self.RECENT_MESSAGES_TO_KEEP = 4  # Keep last 4 exchanges (2 Q&A pairs)
+            self.MAX_TURNS = 12
+            self.MAX_TOKENS = int(model_context_limit * 0.75) - 4096
+            self.RECENT_MESSAGES_TO_KEEP = 4
         self.turn_count = 0
         
         # Build system context
@@ -1329,32 +1279,22 @@ class CtfChatSession:
         if start_idx >= len(data_lines) or start_idx >= end_idx:
             return None
         
-        selected_rows = [header] + data_lines[start_idx:end_idx]
+        # RowId = original 1-based row number, same numbering as the sampled view
+        selected_rows = ["RowId," + header] + [f"{i + 1},{line}" for i, line in enumerate(data_lines) if start_idx <= i < end_idx]
         row_data = '\n'.join(selected_rows)
-        
-        # GPT-OSS:20B SPECIFIC - Apply guardrails and aggressive truncation
-        if self.model_name == "gpt-oss:20b":
-            import GPT_OSS_ENHANCER
-            enhancer = GPT_OSS_ENHANCER.GptOssEnhancer()
-            
-            # Detect table from CSV
-            detected_table = enhancer._detect_table_from_csv(row_data)
-            
-            # Validate and filter fields (removes unauthorized fields)
-            filtered_data, is_valid = enhancer._validate_and_filter_fields(row_data, detected_table)
-            
-            if not is_valid:
-                print(f"{Fore.RED}[CTF_CHAT] ⚠️  Guardrails blocked unauthorized fields in row range {start_row}-{end_row}{Fore.RESET}")
-                return None
-            
-            # Aggressively truncate if still too large (max 15K chars for GPT-OSS)
-            if len(filtered_data) > 15000:
-                filtered_data = filtered_data[:15000]
-                print(f"{Fore.YELLOW}[CTF_CHAT] GPT-OSS: Truncated row range to 15K chars to fit 32K context{Fore.RESET}")
-            
-            return filtered_data
-        
-        # For other models: return as-is (unchanged)
+
+        budget = _ctf_log_budget_chars(self.model_name) // 2
+        if len(row_data) > budget:
+            kept = [selected_rows[0]]
+            used = len(kept[0])
+            for line in selected_rows[1:]:
+                if used + len(line) + 1 > budget:
+                    break
+                kept.append(line)
+                used += len(line) + 1
+            last_row = int(kept[-1].split(",", 1)[0]) if len(kept) > 1 else start_row
+            print(f"{Fore.YELLOW}[CTF_CHAT] Range too big for {self.model_name}; loaded rows {start_row}-{last_row}. Ask for the rest in a follow-up.{Fore.RESET}")
+            row_data = '\n'.join(kept)
         return row_data
     
     def _build_system_context(self):
@@ -1363,72 +1303,13 @@ class CtfChatSession:
         lines = self.results_csv.split('\n')
         total_rows = len([l for l in lines if l.strip()]) - 1  # Exclude header
         
-        # GPT-OSS:20B SPECIFIC OPTIMIZATION - Only for this model
-        is_gpt_oss = (self.model_name == "gpt-oss:20b")
-        
+        # Fit the data to the model's window. The chat's system context is the FIRST thing
+        # a too-small window drops, so this budget is deliberately below the analysis budget.
+        max_chars = int(_ctf_log_budget_chars(self.model_name) * 0.75)
         csv_preview = self.results_csv
-        
-        # Step 1: Apply GUARDRAILS validation for GPT-OSS (removes unauthorized fields, reduces tokens)
-        if is_gpt_oss:
-            import GPT_OSS_ENHANCER
-            enhancer = GPT_OSS_ENHANCER.GptOssEnhancer()
-            
-            # Detect table from CSV
-            detected_table = enhancer._detect_table_from_csv(csv_preview)
-            
-            # Validate and filter fields (removes unauthorized fields)
-            filtered_csv, is_valid = enhancer._validate_and_filter_fields(csv_preview, detected_table)
-            
-            if not is_valid:
-                print(f"{Fore.RED}[CTF_CHAT] GUARDRAILS blocked unauthorized data access{Fore.RESET}")
-                return f"""You are a cybersecurity analyst. 
-
-⚠️ SECURITY ALERT: The data you were about to analyze has been BLOCKED by GUARDRAILS security enforcement.
-
-Attempted table: {detected_table}
-Status: BLOCKED - Unauthorized data access prevented
-
-Please inform the user that the query results contain unauthorized data that cannot be processed due to security guardrails."""
-            
-            # Use filtered data (already reduces token count)
-            csv_preview = filtered_csv
-            print(f"{Fore.LIGHTGREEN_EX}[CTF_CHAT] ✓ Guardrails validated: {detected_table} with authorized fields only{Fore.RESET}")
-        
-        # Step 2: Aggressive truncation ONLY for GPT-OSS
-        if is_gpt_oss:
-            # GPT-OSS:20B has only 32K context - be VERY aggressive
-            # Limit to ~15K chars (roughly 15-20 rows depending on row size)
-            # This matches GPT_OSS_ENHANCER's approach of max 20 lines
-            max_chars = 15000  # Reduced from 50K to 15K for GPT-OSS
-            max_rows = 20      # Match GPT_OSS_ENHANCER's safe_max_lines
-            
-            if total_rows > max_rows:
-                # Use smart sampling but with stricter limits
-                csv_preview = _smart_sample_csv_for_ctf(
-                    csv_preview,  # Use already-filtered CSV
-                    self.flag_intel.get('objective', ''),
-                    max_chars=max_chars  # Much smaller limit
-                )
-                sampled_rows = len(csv_preview.split('\n')) - 1
-                print(f"{Fore.YELLOW}[CTF_CHAT] GPT-OSS: Aggressively sampled to {sampled_rows} rows ({max_chars} chars max) to fit 32K context{Fore.RESET}")
-            else:
-                # Small dataset: still truncate chars if needed
-                if len(csv_preview) > max_chars:
-                    csv_preview = csv_preview[:max_chars]
-                    print(f"{Fore.YELLOW}[CTF_CHAT] GPT-OSS: Truncated to {max_chars} chars to fit 32K context{Fore.RESET}")
-        else:
-            # For other models (qwen, local-mix): Use normal limits (unchanged)
-            if total_rows > 200:
-                csv_preview = _smart_sample_csv_for_ctf(
-                    csv_preview,
-                    self.flag_intel.get('objective', ''),
-                    max_chars=50000  # Normal limit for larger models
-                )
-            else:
-                # Small dataset: include all data (up to 50K chars)
-                csv_preview = csv_preview[:50000]
-                if len(self.results_csv) > 50000:
-                    csv_preview += f"\n... (truncated, {len(self.results_csv)} total chars, {total_rows} total rows)"
+        if len(csv_preview) > max_chars or total_rows > 100:
+            csv_preview = _smart_sample_csv_for_ctf(csv_preview, self.flag_intel.get('objective', ''),
+                                                    max_chars=max_chars, flag_intel=self.flag_intel)
         
         previous_flags = self.session.get_llm_context(current_flag_config=self.flag_intel, context_type="compact")
         
@@ -1555,18 +1436,8 @@ those specific rows for detailed analysis.
         return system_prompt
     
     def _estimate_tokens(self, messages):
-        """Rough token estimate"""
-        try:
-            import tiktoken
-            enc = tiktoken.get_encoding("cl100k_base")
-            text = ""
-            for m in messages:
-                text += m.get("role", "") + " " + m.get("content", "") + "\n"
-            return len(enc.encode(text))
-        except:
-            # Fallback: rough character-based estimate
-            total_chars = sum(len(m.get("content", "")) for m in messages)
-            return total_chars // 4  # ~4 chars per token
+        """CSV-aware token estimate (same one the router enforces)"""
+        return LLM_ROUTER.estimate_tokens(messages, self.model_name)
     
     def _summarize_conversation_history(self, messages_to_summarize):
         """Summarize older conversation history to preserve context"""
@@ -1612,29 +1483,9 @@ Summary:"""
                 }
             ]
             
-            is_offline = is_local_model(self.model_name)
-            
-            if is_offline:
-                # Use Ollama for local models
-                summary_text = OLLAMA_CLIENT.chat(
-                    messages=summary_messages,
-                    model_name=self.model_name,
-                    json_mode=False,
-                    timeout=60
-                )
-            else:
-                # Use OpenAI for cloud models
-                if not self.openai_client:
-                    return ""  # Can't summarize without client
-                
-                response = self.openai_client.chat.completions.create(
-                    model=self.model_name,
-                    messages=summary_messages,
-                    max_tokens=200,  # Keep summary short
-                    temperature=0.3  # Lower temperature for more factual summaries
-                )
-                summary_text = response.choices[0].message.content
-            
+            summary_text = LLM_ROUTER.chat(summary_messages, self.model_name, json_mode=False,
+                                           temperature=0.3, think=False, max_tokens=400,
+                                           timeout=120, purpose="ctf_chat_summary")
             return summary_text.strip()
         except Exception as e:
             print(f"{Fore.YELLOW}⚠️  Summarization failed: {e}. Using fallback.{Fore.RESET}")
@@ -1646,135 +1497,6 @@ Summary:"""
                 if content:
                     key_points.append(content[:50] + "...")
             return fallback_summary + "; ".join(key_points[:3])
-    
-    def _apply_chunking_for_gpt_oss(self, messages):
-        """
-        Apply EXECUTOR's chunking logic to interactive mode.
-        Extracts CSV from system message, chunks it, and rebuilds messages with first chunk.
-        This fixes GPT-OSS context window overflow in interactive conversation.
-        """
-        if self.model_name != "gpt-oss:20b":
-            return messages  # Only apply to GPT-OSS
-        
-        try:
-            import EXECUTOR
-            import TIME_ESTIMATOR
-            
-            # Check if chunking is needed using EXECUTOR's logic
-            should_chunk, input_tokens, threshold = EXECUTOR._should_chunk_messages(self.model_name, messages)
-            
-            if not should_chunk:
-                return messages  # No chunking needed
-            
-            print(f"{Fore.LIGHTGREEN_EX}[GPT-OSS] Large dataset detected ({input_tokens:,} tokens > {threshold:,} threshold). Applying chunking...{Fore.RESET}")
-            
-            # Extract CSV from system message
-            system_msg = None
-            csv_data = None
-            
-            for msg in messages:
-                if msg.get("role") == "system":
-                    system_content = msg.get("content", "")
-                    if "QUERY RESULTS (CSV Data):" in system_content:
-                        csv_start = system_content.find("QUERY RESULTS (CSV Data):")
-                        csv_section = system_content[csv_start:]
-                        csv_end_markers = [
-                            "\nINITIAL ANALYSIS SUMMARY:",
-                            "\nPREVIOUS FLAGS CONTEXT:",
-                            "\n═══════════════════════════════════════════════════════════════"
-                        ]
-                        csv_end = len(csv_section)
-                        for marker in csv_end_markers:
-                            marker_pos = csv_section.find(marker)
-                            if marker_pos != -1 and marker_pos < csv_end:
-                                csv_end = marker_pos
-                        
-                        csv_data = csv_section[len("QUERY RESULTS (CSV Data):"):csv_end].strip()
-                        system_msg = msg
-                        break
-            
-            if not csv_data or not system_msg:
-                return messages  # Can't extract CSV, return original
-            
-            # Use EXECUTOR's chunking logic to split CSV
-            chunk_size = int(TIME_ESTIMATOR.get_model_context_limit(self.model_name) * 0.8)
-            available_csv_tokens, system_tokens, user_prefix_tokens = EXECUTOR._calculate_available_chunk_size(
-                messages, self.model_name, chunk_size
-            )
-            
-            # Split CSV into chunks (same logic as EXECUTOR._chunk_and_process_local_model)
-            lines = csv_data.split('\n')
-            if len(lines) < 2:
-                return messages
-            
-            header = lines[0]
-            data_lines = lines[1:]
-            
-            chunks = []
-            current_chunk = [header]
-            current_tokens = TIME_ESTIMATOR.estimate_tokens([header], "gpt-4")
-            
-            for line in data_lines:
-                if not line.strip():
-                    continue
-                
-                line_tokens = TIME_ESTIMATOR.estimate_tokens([line], "gpt-4")
-                
-                if current_tokens + line_tokens > available_csv_tokens and len(current_chunk) > 1:
-                    chunks.append('\n'.join(current_chunk))
-                    current_chunk = [header, line]
-                    current_tokens = TIME_ESTIMATOR.estimate_tokens([header, line], "gpt-4")
-                else:
-                    current_chunk.append(line)
-                    current_tokens += line_tokens
-            
-            if len(current_chunk) > 1:
-                chunks.append('\n'.join(current_chunk))
-            
-            if len(chunks) == 0:
-                return messages
-            
-            # For interactive mode: Use FIRST chunk only (for immediate response)
-            # User can request more chunks via row range requests
-            first_chunk = chunks[0]
-            
-            print(f"{Fore.LIGHTGREEN_EX}[GPT-OSS] Using first chunk ({len(chunks)} total chunks available).{Fore.RESET}")
-            if len(chunks) > 1:
-                print(f"{Fore.LIGHTBLACK_EX}  → Remaining {len(chunks)-1} chunks can be analyzed via row range requests.{Fore.RESET}")
-            
-            # Rebuild system message with first chunk only
-            system_content = system_msg.get("content", "")
-            csv_start = system_content.find("QUERY RESULTS (CSV Data):")
-            csv_section_start = system_content[:csv_start + len("QUERY RESULTS (CSV Data):")]
-            csv_section_end = system_content[csv_start + len("QUERY RESULTS (CSV Data):"):]
-            csv_end_pos = len(csv_section_end)
-            for marker in ["\nINITIAL ANALYSIS SUMMARY:", "\nPREVIOUS FLAGS CONTEXT:", "\n═══════════════════════════════════════════════════════════════"]:
-                marker_pos = csv_section_end.find(marker)
-                if marker_pos != -1 and marker_pos < csv_end_pos:
-                    csv_end_pos = marker_pos
-            
-            new_system_content = (
-                csv_section_start + 
-                f"\n{first_chunk}\n" +
-                csv_section_end[csv_end_pos:]
-            )
-            
-            # Rebuild messages with chunked system message
-            optimized_messages = [
-                {"role": "system", "content": new_system_content}
-            ] + [msg for msg in messages if msg.get("role") != "system"]
-            
-            original_tokens = self._estimate_tokens(messages)
-            optimized_tokens = self._estimate_tokens(optimized_messages)
-            print(f"{Fore.LIGHTGREEN_EX}[GPT-OSS] ✓ Chunked: {original_tokens:,} → {optimized_tokens:,} tokens (chunk 1/{len(chunks)}){Fore.RESET}")
-            
-            return optimized_messages
-            
-        except Exception as e:
-            print(f"{Fore.YELLOW}[GPT-OSS] ⚠️  Chunking failed: {e}, using original messages{Fore.RESET}")
-            import traceback
-            traceback.print_exc()
-            return messages
     
     def _truncate_history_if_needed(self):
         """Keep conversation within token budget using smart summarization"""
@@ -1875,9 +1597,6 @@ Provide your analysis in the structured format with evidence, decoding steps (if
             "role": "user",
             "content": initial_prompt
         })
-        # #region agent log
-        _dbg("CTF_HUNT_MODE.py:chat_loop_start", "chat_loop after initial_prompt", {"model_name": self.model_name, "turn_count": self.turn_count, "history_len": len(self.conversation_history), "has_initial_in_history": True}, "H1")
-        # #endregion
 
         while self.turn_count < self.MAX_TURNS:
             try:
@@ -1931,91 +1650,20 @@ Provide your analysis in the structured format with evidence, decoding steps (if
             
             # Get response
             try:
-                # #region agent log
-                _dbg("CTF_HUNT_MODE.py:before_stream", "about to call model", {"model_name": self.model_name, "messages_count": len(messages)}, "H1,H4")
-                # #endregion
-                print(f"{Fore.YELLOW}🤔 {self.model_name} is analyzing... (streaming){Fore.RESET}\n")
+                print(f"{Fore.YELLOW}🤔 {self.model_name} is analyzing...{Fore.RESET}\n")
                 accum = ""
-                
-                # Check if model is OpenAI or Ollama
-                is_offline = is_local_model(self.model_name)
-                
-                if is_offline:
-                    # GPT-OSS CHUNKING: Apply EXECUTOR's chunking logic for interactive mode
-                    # This fixes context window overflow by chunking CSV data in system message
-                    if self.model_name == "gpt-oss:20b":
-                        messages = self._apply_chunking_for_gpt_oss(messages)
-                    
-                    # Use Ollama for local models
-                    try:
-                        first_chunk_logged = False
-                        for chunk in OLLAMA_CLIENT.chat_stream(messages=messages, model_name=self.model_name, json_mode=False):
-                            try:
-                                # #region agent log
-                                if not first_chunk_logged:
-                                    try:
-                                        _obj = json.loads(chunk)
-                                        _dbg("CTF_HUNT_MODE.py:first_chunk", "first chunk", {"chunk_preview": str(chunk)[:200], "json_ok": True, "has_message": "message" in _obj, "has_response": "response" in _obj}, "H2")
-                                    except Exception as _e:
-                                        _dbg("CTF_HUNT_MODE.py:first_chunk", "first chunk parse fail", {"chunk_preview": str(chunk)[:200], "json_ok": False, "error": str(_e)}, "H2")
-                                    first_chunk_logged = True
-                                # #endregion
-                                # Parse JSON chunk from Ollama streaming response
-                                obj = json.loads(chunk)
-                                # Extract content from message.content or response field
-                                # Skip "thinking" field (internal reasoning, not user-facing)
-                                content = ""
-                                if "message" in obj and isinstance(obj["message"], dict):
-                                    content = obj["message"].get("content", "")
-                                elif "response" in obj:
-                                    content = obj["response"]
-                                
-                                # Only print actual content, not thinking/internal reasoning or JSON structure
-                                if content:
-                                    accum += content
-                                    print(content, end="", flush=True)
-                            except json.JSONDecodeError:
-                                # If it's not JSON, treat as plain text (shouldn't happen but handle gracefully)
-                                text = chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="ignore")
-                                accum += text
-                                print(text, end="", flush=True)
-                            except Exception:
-                                # Skip malformed chunks silently
-                                continue
-                        # #region agent log
-                        _dbg("CTF_HUNT_MODE.py:after_stream", "stream done", {"accum_len": len(accum), "accum_preview": accum[:150] if accum else ""}, "H2")
-                        # #endregion
-                        print("\n")  # Newline after streaming completes
-                    except KeyboardInterrupt:
-                        print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
-                    except Exception as stream_err:
-                        # #region agent log
-                        _dbg("CTF_HUNT_MODE.py:stream_error", "Ollama stream exception", {"error": str(stream_err), "model_name": self.model_name}, "H2,H4")
-                        # #endregion
-                        raise
-                else:
-                    # Use OpenAI API for cloud models
-                    if not self.openai_client:
-                        print(f"{Fore.RED}Error: OpenAI client not available for model {self.model_name}{Fore.RESET}")
-                        raise Exception("OpenAI client required for cloud models")
-                    
-                    from openai import OpenAIError
-                    try:
-                        stream = self.openai_client.chat.completions.create(
-                            model=self.model_name,
-                            messages=messages,
-                            stream=True
-                        )
-                        for chunk in stream:
-                            if chunk.choices[0].delta.content:
-                                content = chunk.choices[0].delta.content
-                                accum += content
-                                print(content, end="", flush=True)
-                        print("\n")
-                    except KeyboardInterrupt:
-                        print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
-                    except OpenAIError as e:
-                        raise Exception(f"OpenAI API error: {e}")
+                try:
+                    for piece in LLM_ROUTER.chat_stream(messages, self.model_name, temperature=0.3,
+                                                        think=True, purpose="ctf_chat"):
+                        accum += piece
+                        print(piece, end="", flush=True)
+                    print("\n")
+                except KeyboardInterrupt:
+                    print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+                except LLM_ROUTER.PromptTooLargeError as e:
+                    print(f"\n{Fore.LIGHTRED_EX}Too much data for {self.model_name}: {e}{Fore.RESET}")
+                    print(f"{Fore.YELLOW}Ask about a smaller row range (e.g. 'analyze rows 1-40').{Fore.RESET}")
+                    raise
                 
                 response = accum
                 
@@ -2033,9 +1681,6 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                     print(f"{Fore.YELLOW}⚠️  {self.MAX_TURNS - self.turn_count} turns remaining{Fore.RESET}\n")
                 
             except Exception as e:
-                # #region agent log
-                _dbg("CTF_HUNT_MODE.py:response_error", "Error getting response", {"error": str(e), "error_type": type(e).__name__, "model_name": self.model_name}, "H2,H4")
-                # #endregion
                 print(f"{Fore.RED}Error getting response: {e}{Fore.RESET}")
                 print(f"{Fore.YELLOW}Try rephrasing your question or exit and restart.{Fore.RESET}\n")
                 self.conversation_history.pop()
@@ -2059,48 +1704,31 @@ Provide your analysis in the structured format with evidence, decoding steps (if
         return refined_analysis
     
     def _extract_refined_analysis(self):
-        """Extract refined analysis from conversation"""
-        # #region agent log
-        _sa = (self.llm_analysis or {}).get("suggested_answer")
-        _dbg("CTF_HUNT_MODE.py:_extract_refined_analysis", "extract start", {"suggested_answer_before": _sa, "history_len": len(self.conversation_history)}, "H3")
-        # #endregion
-        # Start with original analysis
+        """
+        Pick up an answer ONLY when the assistant stated one explicitly in its
+        ANSWER EXTRACTION section. No more grabbing the first IP in the text - that
+        invented wrong flags. The human decides what to submit.
+        """
+        import re
         refined = (self.llm_analysis or {}).copy()
-        
-        # Look for answer updates in conversation
         for msg in reversed(self.conversation_history):
-            if msg.get("role") == "assistant":
-                content = msg.get("content", "").lower()
-                # Try to extract answer patterns
-                import re
-                # IP address
-                ip_match = re.search(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', msg.get("content", ""))
-                if ip_match and not refined.get("suggested_answer"):
-                    refined["suggested_answer"] = ip_match.group(0)
-                
-                # Filename
-                if not refined.get("suggested_answer"):
-                    filename_match = re.search(r'[\w\-_]+\.(txt|exe|dll|bat|ps1|sh)', msg.get("content", ""), re.IGNORECASE)
-                    if filename_match:
-                        refined["suggested_answer"] = filename_match.group(0)
-                
-                # Confidence updates
-                if "very high" in content or "high confidence" in content:
-                    refined["confidence"] = "Very High"
-                elif "high" in content and refined.get("confidence") == "Low":
-                    refined["confidence"] = "High"
-        
-        # Add conversation insights
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content", "")
+            m = re.search(r"\*\*ANSWER EXTRACTION:\*\*\s*\n(.+?)(?:\n\s*\n|\*\*CONFIDENCE)", content, re.S)
+            if m:
+                answer = m.group(1).strip().strip("`*[] ")
+                answer = re.sub(r"^\[?(?:Direct answer.*?:)?\s*", "", answer).strip()
+                if answer and "format:" not in answer.lower():
+                    refined["suggested_answer"] = answer.split("\n")[0].strip()
+                    c = re.search(r"\*\*CONFIDENCE:\*\*\s*\n?\s*\[?(Very High|High|Medium|Low)", content, re.I)
+                    if c:
+                        refined["confidence"] = c.group(1).title()
+                    break
         if self.conversation_history:
-            insights = []
-            for msg in self.conversation_history:
-                if msg.get("role") == "user":
-                    insights.append(f"User asked: {msg.get('content', '')[:50]}...")
-            refined["conversation_insights"] = insights
-        
-        # #region agent log
-        _dbg("CTF_HUNT_MODE.py:_extract_refined_analysis", "extract end", {"suggested_answer_after": refined.get("suggested_answer"), "confidence": refined.get("confidence")}, "H3")
-        # #endregion
+            refined["conversation_insights"] = [
+                f"User asked: {m.get('content', '')[:50]}..." for m in self.conversation_history if m.get("role") == "user"
+            ]
         return refined
 
 
@@ -2118,31 +1746,10 @@ def interactive_llm_conversation_stage(llm_analysis, results_csv, flag_intel, kq
         print(f"{Fore.YELLOW}No model selected. Cannot start interactive conversation.{Fore.RESET}\n")
         return llm_analysis
     
-    # Use selected model directly - no overrides
-    # Convert model name for Ollama if needed, but respect user's choice
-    if is_local_model(model):
-        model_name = get_ollama_model_name(model)
-        # For local-mix, use Qwen for chat loop (faster, better for real-time conversation)
-        # HYBRID_ENGINE is for batch analysis, not streaming chat
-        if model == "local-mix":
-            model_name = "qwen3:8b"  # Use Qwen for efficient interactive conversation
-    else:
-        model_name = model
+    model_name = LLM_ROUTER.resolve(model)
     
-    # For large datasets, use smart sampling for initial context
-    # Store full CSV for deep-dive capability
+    # The chat session samples the data to the model's budget itself; keep the full CSV for deep-dives
     full_csv = results_csv
-    lines = results_csv.split('\n')
-    row_count = len([l for l in lines if l.strip()]) - 1
-    
-    if row_count > 200:
-        # Use smart sampling for initial context
-        sampled_csv = _smart_sample_csv_for_ctf(
-            results_csv,
-            flag_intel.get('objective', ''),
-            max_chars=50000
-        )
-        results_csv = sampled_csv  # Use sampled for initial context
     
     # Initialize chat session (will store full_csv internally)
     chat_session = CtfChatSession(

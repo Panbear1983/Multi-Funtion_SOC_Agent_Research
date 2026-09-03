@@ -1,7 +1,7 @@
 import re
 import json
 from color_support import Fore
-import OLLAMA_CLIENT
+import LLM_ROUTER
 import LEARNING_ENGINE
 import GUARDRAILS
 
@@ -1248,45 +1248,41 @@ class QwenEnhancer:
             # Use filtered data for analysis
             log_data = filtered_log_data
         
-        # CHUNK LOGS: Split if too large (prevents timeout)
-        log_lines = log_data.split('\n')
-        total_lines = len([l for l in log_lines if l.strip()])
-        
-        if total_lines > max_lines:
-            print(f"{Fore.YELLOW}Large dataset ({total_lines} lines). Chunking to {max_lines} lines max...{Fore.RESET}")
-            # Take first max_lines for analysis
-            log_data = '\n'.join([l for l in log_lines if l.strip()][:max_lines])
-            print(f"{Fore.WHITE}Analyzing first {max_lines} lines (remaining lines processed by rules only){Fore.RESET}")
-        
+        # LIMIT LOGS for the local model: slice to max_lines (CTF data is already sampled
+        # upstream to fit the window, so it is passed through untouched to keep row numbers).
+        log_lines = [l for l in log_data.split('\n') if l.strip()]
+        total_lines = len(log_lines)
+        if not is_ctf_mode and total_lines > max_lines:
+            print(f"{Fore.YELLOW}Large dataset ({total_lines} lines). Sending the first {max_lines} lines to the model; rules run on all of them.{Fore.RESET}")
+            llm_log_data = '\n'.join(log_lines[:max_lines])
+        else:
+            llm_log_data = log_data
+
         # Apply rule-based analysis (fast, works on all data)
         rule_findings, iocs = self.analyze_logs_with_rules(log_data, table_name)
-        
-        # If rule-based found threats, skip slow LLM analysis
-        if len(rule_findings) > 5:
-            print(f"{Fore.WHITE}Rule-based detection found {len(rule_findings)} findings. Skipping LLM (fast mode).{Fore.RESET}")
-            return {"findings": rule_findings}
-        
-        # Enhance prompt with rule findings (smaller payload) and authority enhancement
-        enhanced_messages = self._enhance_messages_with_rules(messages, rule_findings, iocs, model_name)
-        
-        # Get LLM analysis with timeout handling
-        print(f"{Fore.LIGHTGREEN_EX}Getting LLM analysis from {model_name} (streaming)...{Fore.RESET}")
+
+        # The old "skip the LLM when rules fire >5 times" shortcut is gone: on process
+        # logs it fired almost always, so the model was never asked (audit 2026-09-03).
+
+        # Build the prompt the model will actually see: filtered + sliced data substituted in
+        enhanced_messages = self._enhance_messages_with_rules(messages, rule_findings, iocs, model_name,
+                                                             log_data=llm_log_data)
+
+        print(f"{Fore.LIGHTGREEN_EX}Getting LLM analysis from {model_name}...{Fore.RESET}")
         buffer = ""
         llm_findings = []
         try:
-            for chunk in OLLAMA_CLIENT.chat_stream(messages=enhanced_messages, model_name=model_name):
-                try:
-                    obj = json.loads(chunk)
-                    msg = (obj.get("message") or {}).get("content", "") or obj.get("response", "")
-                    if msg:
-                        buffer += msg
-                except Exception:
-                    buffer += chunk if isinstance(chunk, str) else ""
+            buffer = LLM_ROUTER.chat(
+                enhanced_messages, model_name, json_mode=True, temperature=0.1, think=False,
+                purpose="ctf_analysis" if is_ctf_mode else "threat_hunt")
         except KeyboardInterrupt:
-            print(f"{Fore.YELLOW}Cancelled by user. Returning partial results if possible.{Fore.RESET}")
+            print(f"{Fore.YELLOW}Cancelled by user. Returning rule-based results only.{Fore.RESET}")
+        except LLM_ROUTER.PromptTooLargeError as e:
+            print(f"{Fore.LIGHTRED_EX}Prompt too large for {model_name}: {e}{Fore.RESET}")
+            print(f"{Fore.YELLOW}Returning rule-based findings only. Narrow the query and retry.{Fore.RESET}")
         except Exception as e:
             print(f"{Fore.LIGHTRED_EX}LLM timeout/error: {e}{Fore.RESET}")
-            print(f"{Fore.YELLOW}Falling back to rule-based findings + partial text if any{Fore.RESET}")
+            print(f"{Fore.YELLOW}Falling back to rule-based findings{Fore.RESET}")
 
         if buffer.strip():
             try:
@@ -1311,7 +1307,9 @@ class QwenEnhancer:
                         llm_findings = []
                 else:
                     # Default threat hunt format
-                    llm_results = json.loads(buffer)
+                    llm_results = LLM_ROUTER.extract_json(buffer)
+                    if not llm_results:
+                        raise json.JSONDecodeError("no JSON object in reply", buffer[:50], 0)
                     llm_findings = llm_results.get("findings", [])
             except json.JSONDecodeError:
                 # salvage partial by attaching as a narrative note and try extracting entities
@@ -1371,21 +1369,28 @@ class QwenEnhancer:
             print(f"{Fore.YELLOW}Rule-based pattern analysis error: {e}{Fore.RESET}")
             return [], []
 
-    def _enhance_messages_with_rules(self, messages, rule_findings, iocs, model_name="qwen3:8b"):
-        """Add rule-based context to LLM messages and enhance system prompt with authority"""
+    def _enhance_messages_with_rules(self, messages, rule_findings, iocs, model_name="qwen3:8b", log_data=None):
+        """
+        Add rule-based context to LLM messages and enhance the system prompt with authority.
+        log_data (optional): the filtered/sliced data that must REPLACE the original log block,
+        so what the model sees is what the guardrails and the line limit decided.
+        """
         enhanced_messages = []
         has_system_msg = False
         
         for msg in messages:
             if msg.get("role") == "system":
-                # Enhance system message with authority header (Qwen has 128K, can afford full enhancement)
                 enhanced_system_msg = self._enhance_system_prompt_authority(msg, model_name)
                 enhanced_messages.append(enhanced_system_msg)
                 has_system_msg = True
             elif msg.get("role") == "user" and "Log Data:" in msg.get("content", ""):
-                # Add rule-based context to the user message
+                content = msg["content"]
+                if log_data is not None:
+                    content = content.split("Log Data:", 1)[0] + "Log Data:\n" + log_data
+                # Rule context goes BEFORE the data so the instructions stay together
                 rule_context = self._build_rule_context(rule_findings, iocs)
-                enhanced_content = msg["content"] + f"\n\nRule-based Analysis Results:\n{rule_context}"
+                head, data = content.split("Log Data:", 1)
+                enhanced_content = f"{head}Rule-based Pre-Analysis:\n{rule_context}\n\nLog Data:{data}"
                 enhanced_messages.append({
                     "role": "user",
                     "content": enhanced_content
@@ -1429,20 +1434,13 @@ class QwenEnhancer:
         if not MODEL_SELECTOR.AUTHORITY_ENHANCEMENT_ENABLED:
             return system_msg
         
-        # Qwen: Full authority header (128K limit - can afford more)
-        if model_name in ["qwen", "qwen3:8b"]:
+        import LLM_ROUTER
+        if LLM_ROUTER.is_local(model_name):
             authority_header = """You are a Senior SOC Analyst with 10+ years of threat hunting experience.
 Provide confident, authoritative assessments based on evidence.
 Take ownership of your findings."""
-            # ~30 tokens - full authority framing
-        
-        # GPT-OSS: Ultra-compact (shouldn't reach here, but handle gracefully)
-        elif model_name == "gpt-oss:20b":
-            authority_header = "Senior SOC Analyst. Confident assessments based on evidence."
-            # ~10 tokens - minimal but authoritative
-        
         else:
-            return system_msg  # Unknown model, skip
+            return system_msg  # Cloud models: leave the system prompt as written
         
         # Append to existing content (preserve original)
         original_content = system_msg.get('content', '')
@@ -1530,12 +1528,13 @@ Take ownership of your findings."""
 
     def _standard_llm_analysis(self, messages, model_name):
         """Fallback to standard LLM analysis"""
-        content = OLLAMA_CLIENT.chat(messages=messages, model_name=model_name)
         try:
-            results = json.loads(content)
-            return results
-        except json.JSONDecodeError:
+            content = LLM_ROUTER.chat(messages, model_name, json_mode=True, think=False, purpose="standard_analysis")
+        except Exception as e:
+            print(f"{Fore.YELLOW}LLM call failed: {e}{Fore.RESET}")
             return {"findings": []}
+        results = LLM_ROUTER.extract_json(content)
+        return results if results else {"findings": []}
     
     def refine_findings_with_gpt(self, raw_findings, gpt_model=None):
         """

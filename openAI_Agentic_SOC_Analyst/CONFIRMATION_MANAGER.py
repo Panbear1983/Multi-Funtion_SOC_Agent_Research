@@ -69,22 +69,18 @@ def confirm_analysis_with_time_estimate(model_name, input_tokens, cost_info, inv
     # Processing details
     print(f"\n{Fore.LIGHTYELLOW_EX}Processing Details:{Fore.RESET}")
     
-    if model_name == "local-mix":
-        print(f"  • Hybrid processing (Qwen + GPT-OSS parallel)")
-        if input_tokens and input_tokens > 100000:
-            chunks = TIME_ESTIMATOR.time_estimator._calculate_chunks(input_tokens, 100000)
-            print(f"  • Chunked processing ({chunks} chunks)")
-        else:
-            print(f"  • Single-pass processing")
-    elif input_tokens and input_tokens > TIME_ESTIMATOR.get_model_context_limit(model_name):
+    if input_tokens and input_tokens > TIME_ESTIMATOR.get_model_context_limit(model_name):
         chunks = TIME_ESTIMATOR.time_estimator._calculate_chunks(input_tokens, TIME_ESTIMATOR.get_model_context_limit(model_name))
         print(f"  • Chunked processing ({chunks} chunks)")
     else:
         print(f"  • Single-pass processing")
     
     # Model type
-    if model_name in ["qwen", "gpt-oss:20b", "local-mix"]:
+    import LLM_ROUTER
+    if LLM_ROUTER.is_local(model_name):
         print(f"  • Local/Offline model (no API calls)")
+    elif LLM_ROUTER.is_claude(model_name) and LLM_ROUTER.claude_backend() == "cli":
+        print(f"  • Claude via your Claude Code subscription login (no per-call charge)")
     else:
         print(f"  • Cloud model (API calls required)")
     
@@ -116,11 +112,14 @@ def get_cost_info(model_name, input_tokens=None):
         dict: Cost information with actual cost estimate if input_tokens provided
     """
     
-    # Check if it's a local/offline model
-    if model_name in ["qwen", "gpt-oss:20b", "local-mix"]:
+    import LLM_ROUTER
+    model_name = LLM_ROUTER.resolve(model_name)
+    if LLM_ROUTER.is_local(model_name):
         return {"cost": "Free", "type": "Local/Offline"}
-    
-    # For OpenAI models, calculate actual cost if input_tokens provided
+    if LLM_ROUTER.is_claude(model_name) and LLM_ROUTER.claude_backend() == "cli":
+        return {"cost": "Subscription (Claude Code login)", "type": "Cloud/Claude"}
+
+    # For paid API models, calculate actual cost if input_tokens provided
     if model_name in GUARDRAILS.ALLOWED_MODELS:
         model_info = GUARDRAILS.ALLOWED_MODELS[model_name]
         

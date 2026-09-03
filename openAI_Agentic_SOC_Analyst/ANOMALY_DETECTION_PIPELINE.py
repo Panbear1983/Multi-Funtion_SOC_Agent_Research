@@ -550,10 +550,13 @@ Analysis Stages: Statistical → Baseline → LLM → Correlation
         # Always create basic summary
         basic_summary = self._basic_summary(all_findings, correlated_attacks)
         
-        # If GPT-4 available and user wants refinement, enhance it
-        if self.openai_client and MODEL_SELECTOR.is_offline_model(self.model) == False:
+        # A cloud model (OpenAI or Claude) polishes the summary; the local model keeps the basic one
+        if MODEL_SELECTOR.is_offline_model(self.model) == False:
             try:
-                print(f"{Fore.LIGHTCYAN_EX}Generating executive summary with GPT-4...{Fore.RESET}")
+                import LLM_ROUTER
+                if self.openai_client is not None:
+                    LLM_ROUTER.set_openai_client(self.openai_client)
+                print(f"{Fore.LIGHTCYAN_EX}Generating executive summary with {LLM_ROUTER.resolve(self.model)}...{Fore.RESET}")
                 
                 # Prepare factual data
                 summary_data = {
@@ -585,16 +588,13 @@ REQUIREMENTS:
 
 Return as structured text, not JSON."""
 
-                response = self.openai_client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
+                gpt_summary = LLM_ROUTER.chat(
+                    [
                         {"role": "system", "content": "You are a senior SOC analyst creating an executive summary. Never fabricate IOCs or findings."},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.2
+                    self.model, json_mode=False, temperature=0.2, purpose="anomaly_exec_summary",
                 )
-                
-                gpt_summary = response.choices[0].message.content
                 
                 if self._validate_summary_facts(gpt_summary, summary_data):
                     print(f"{Fore.LIGHTGREEN_EX}✓ GPT-enhanced summary generated{Fore.RESET}")

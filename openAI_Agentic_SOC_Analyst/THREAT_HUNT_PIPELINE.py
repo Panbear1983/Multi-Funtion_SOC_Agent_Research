@@ -375,14 +375,9 @@ def run_threat_hunt(openai_client, law_client, workspace_id, model, severity_con
             import CONFIRMATION_MANAGER
             import TIME_ESTIMATOR
             records_csv = law_query_results.get("records", "")
-            approx_tokens = max(1, len(records_csv) // 4)  # ~4 chars/token
-
-            # Choose a conservative limit for hybrid/local models
-            if model == "local-mix":
-                limit = min(TIME_ESTIMATOR.get_model_context_limit('qwen3:8b'),
-                            TIME_ESTIMATOR.get_model_context_limit('gpt-oss:20b'))
-            else:
-                limit = TIME_ESTIMATOR.get_model_context_limit(model)
+            import LLM_ROUTER
+            approx_tokens = max(1, LLM_ROUTER.estimate_tokens("Log Data:\n" + records_csv))  # CSV-aware
+            limit = TIME_ESTIMATOR.get_model_context_limit(model)
 
             # Always confirm right before inference using real size/ETA
             cost_info = CONFIRMATION_MANAGER.get_cost_info(model, input_tokens=approx_tokens)
