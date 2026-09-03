@@ -25,6 +25,8 @@ import AZURE_SCHEMA_REFERENCE
 import FORM_IMPORT
 import EVIDENCE_FILTER
 import PROMPT_MANAGEMENT
+import REPORT_GENERATOR
+import PUBLISH
 import pandas as pd
 
 
@@ -166,10 +168,16 @@ def run_ctf_hunt(openai_client, law_client, workspace_id, timerange_hours, start
                 print(f"{Fore.LIGHTGREEN_EX}✓ Session paused. You can resume later.{Fore.RESET}\n")
                 break
             
+            elif action == 'writeup':
+                writeup_stage(session, model=model, openai_client=openai_client)
+                continue
+
             elif action == 'finish':
                 # Flag logic flow stage
                 flag_logic_flow_stage(session)
                 session.state['status'] = 'completed'
+                session.save_state()
+                writeup_stage(session, model=model, openai_client=openai_client)
                 break
     
     except KeyboardInterrupt:
@@ -243,6 +251,8 @@ def hunt_single_flag(session, openai_client, law_client, workspace_id,
         
         import MODEL_SELECTOR
         model = MODEL_SELECTOR.prompt_model_selection(input_tokens=None)
+        session.state['model'] = model          # remembered for the write-up stage
+        session.save_state()
         
         # Also select severity if not provided
         if severity_config is None:
@@ -2188,6 +2198,80 @@ FINDING:
 # STAGE 7: NEXT ACTION MENU
 # ═══════════════════════════════════════════════════════════════
 
+
+def writeup_stage(session, model=None, openai_client=None):
+    """
+    Draft the GitHub write-up in Peter's published format from the session, save it next
+    to his other reports, and (only if he says so) push it as a branch + pull request.
+    """
+    state = session.state
+    model = model or state.get('model')
+    if not state.get('flags_captured'):
+        print(f"{Fore.YELLOW}No captured flags yet - nothing to write up.{Fore.RESET}\n")
+        return None
+
+    print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
+    print(f"{Fore.LIGHTCYAN_EX}📝 GITHUB WRITE-UP")
+    print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}\n")
+    n = len(state['flags_captured'])
+    total = state.get('total_flags') or n
+    print(f"{Fore.WHITE}{n}/{total} flags captured. The structured sections come straight from the session;")
+    print(f"the narrative (overview, diamond model, remediation, lessons, conclusion) is drafted by {LLM_ROUTER.resolve(model) if model else 'no model'} and marked DRAFT.{Fore.RESET}")
+
+    use_model = model
+    if model:
+        try:
+            ans = input(f"{Fore.LIGHTGREEN_EX}Draft the narrative with {LLM_ROUTER.resolve(model)}? [Y/n]: {Fore.RESET}").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            ans = "n"
+        if ans == "n":
+            use_model = None
+
+    if use_model:
+        print(f"{Fore.LIGHTBLACK_EX}Drafting narrative sections... (local model: 2-4 minutes){Fore.RESET}")
+    markdown = REPORT_GENERATOR.build_report(state, model=use_model, openai_client=openai_client)
+    filename = REPORT_GENERATOR.default_filename(state)
+    try:
+        path = PUBLISH.write_report_file(markdown, filename)
+    except Exception as e:
+        path = os.path.join(session.session_dir, filename)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(markdown)
+        print(f"{Fore.YELLOW}Could not write into the repo folder ({e}); saved to the session folder instead.{Fore.RESET}")
+    print(f"\n{Fore.LIGHTGREEN_EX}✓ Write-up drafted: {path}{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}  Sections marked DRAFT need your edit; screenshots are placeholders.{Fore.RESET}\n")
+    state['writeup_path'] = path
+    session.save_state()
+
+    # Publish? (branch + commit + push + PR, guarded by the secret-scan hooks)
+    try:
+        root = PUBLISH.repo_root()
+        info = PUBLISH.preflight(root)
+    except Exception as e:
+        print(f"{Fore.YELLOW}Not a git repo here ({e}) - publish skipped. The file is ready to add by hand.{Fore.RESET}\n")
+        return path
+    print(f"{Fore.WHITE}Publish to GitHub as a pull request?{Fore.RESET}")
+    print(f"{Fore.LIGHTBLACK_EX}  remote: {info['remote']}   from branch: {info['branch']}   secret-scan hooks: {info['hooks']}   gh login: {'yes' if info['gh'] else 'NO'}{Fore.RESET}")
+    if info['hooks'] == '(none)':
+        print(f"{Fore.RED}  No secret-scan hooks are wired in this repo - refusing to push. Run: git config core.hooksPath scripts/git-hooks{Fore.RESET}\n")
+        return path
+    try:
+        ans = input(f"{Fore.LIGHTGREEN_EX}Push and open the PR now? [y/N]: {Fore.RESET}").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        ans = "n"
+    if ans != "y":
+        print(f"{Fore.LIGHTBLACK_EX}Not published. You can publish later from the WHAT'S NEXT menu.{Fore.RESET}\n")
+        return path
+    try:
+        url = PUBLISH.publish(path, title=state.get('project_name') or filename, root=root)
+        state['writeup_pr'] = url
+        session.save_state()
+        print(f"\n{Fore.LIGHTGREEN_EX}✓ Pull request: {url}{Fore.RESET}\n")
+    except PUBLISH.PublishError as e:
+        print(f"\n{Fore.RED}Publish failed:{Fore.RESET}\n{e}\n")
+    return path
+
+
 def prompt_next_action(session):
     """Ask what user wants to do next"""
     
@@ -2211,14 +2295,17 @@ def prompt_next_action(session):
         max_choice = 4
     else:
         max_choice = 3
-    print(f"  {Fore.LIGHTBLUE_EX}[F]{Fore.RESET} 📥 {'Re-import' if session.state.get('flags_planned') else 'Import'} the hunt's flags from a Google Form link\n")
+    print(f"  {Fore.LIGHTBLUE_EX}[F]{Fore.RESET} 📥 {'Re-import' if session.state.get('flags_planned') else 'Import'} the hunt's flags from a Google Form link")
+    print(f"  {Fore.LIGHTBLUE_EX}[R]{Fore.RESET} 📝 Draft the GitHub write-up now (and optionally open a pull request)\n")
     
     try:
-        choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-{max_choice}/F]: {Fore.RESET}").strip()
+        choice = input(f"{Fore.LIGHTGREEN_EX}Select [1-{max_choice}/F/R]: {Fore.RESET}").strip()
         
         if choice.upper() == 'F':
             import_hunt_form_into_session(session)
             return prompt_next_action(session)
+        if choice.upper() == 'R':
+            return 'writeup'
         if choice == '1' or not choice:
             return 'new_flag'
         elif choice == '2':
