@@ -107,3 +107,66 @@ def test_documentation_menu_hides_answer_until_revealed(capsys, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda *_: "3")
     assert CTF_HUNT_MODE.result_documentation_menu(analysis, model="qwen3:8b") == "use_llm_answer"
     assert "SECRET" in capsys.readouterr().out
+
+
+# ── flag hub (2026-09-04) ─────────────────────────────────────────────────
+
+class _HubSession:
+    def __init__(self, level=1):
+        self.state = {"coach_level": level, "flags_completed": 0, "project_name": "t"}
+        self.saved = 0
+    def save_state(self):
+        self.saved += 1
+    def get_llm_context(self, **kw):
+        return "none"
+
+
+def _hub(monkeypatch, keys, analysis=None, level=1, **patches):
+    """Drive flag_hub with a scripted key sequence; returns (outcome, model, analysis, printed)."""
+    seq = iter(keys)
+    monkeypatch.setattr("builtins.input", lambda *_: next(seq))
+    monkeypatch.setattr(CTF_HUNT_MODE, "display_results_paginated", lambda csv: print("[results shown]"))
+    for name, fn in patches.items():
+        monkeypatch.setattr(CTF_HUNT_MODE, name, fn)
+    flag = {"title": "FLAG 5: EXECUTION - Malware Download Command", "objective": "What command was used?", "format": "Full command line", "flag_number": 5}
+    return CTF_HUNT_MODE.flag_hub(make_rows(), flag, "DeviceProcessEvents", _HubSession(level), None, "qwen3:8b", None, None, llm_analysis=analysis)
+
+
+def test_hub_hides_answer_then_reveals_on_R(monkeypatch, capsys):
+    analysis = {"suggested_answer": "SECRET-CMD", "confidence": "High", "evidence_rows": [45], "evidence_fields": [], "explanation": "x", "correlation": "", "guidance": "look at curl", "candidates": []}
+    outcome, model, out_analysis = _hub(monkeypatch, ["B"], analysis=analysis)
+    printed = capsys.readouterr().out
+    assert outcome == "parked" and "SECRET-CMD" not in printed and "hidden at coach level 1" in printed
+
+    outcome, model, out_analysis = _hub(monkeypatch, ["R", "B"], analysis=dict(analysis))
+    printed = capsys.readouterr().out
+    assert out_analysis["revealed"] is True and "SECRET-CMD" in printed
+
+
+def test_hub_answer_box_captures_and_park_records_nothing(monkeypatch):
+    calls = []
+    outcome, *_ = _hub(monkeypatch, ["A"], document_result_stage=lambda *a, **k: calls.append("doc") or True)
+    assert outcome == "captured" and calls == ["doc"]
+    outcome, *_ = _hub(monkeypatch, ["B"])
+    assert outcome == "parked"
+
+
+def test_hub_switches_model_and_reruns_analysis(monkeypatch):
+    import MODEL_SELECTOR
+    monkeypatch.setattr(MODEL_SELECTOR, "prompt_model_selection", lambda **k: "claude-opus-5")
+    ran = []
+    fake = lambda **k: ran.append(k["model"]) or {"suggested_answer": "x", "confidence": "High", "revealed": False}
+    outcome, model, analysis = _hub(monkeypatch, ["2", "B"], llm_result_analysis_stage=fake)
+    assert ran == ["claude-opus-5"] and model == "claude-opus-5" and analysis["suggested_answer"] == "x"
+
+
+def test_hub_rewrite_and_show_results(monkeypatch, capsys):
+    outcome, *_ = _hub(monkeypatch, ["4", "5"])
+    assert outcome == "rewrite_kql" and "[results shown]" in capsys.readouterr().out
+
+
+def test_hub_default_key_is_answer_once_revealed(monkeypatch):
+    analysis = {"suggested_answer": "x", "confidence": "High", "revealed": True}
+    calls = []
+    outcome, *_ = _hub(monkeypatch, [""], analysis=analysis, document_result_stage=lambda *a, **k: calls.append(1) or True)
+    assert outcome == "captured" and calls == [1]

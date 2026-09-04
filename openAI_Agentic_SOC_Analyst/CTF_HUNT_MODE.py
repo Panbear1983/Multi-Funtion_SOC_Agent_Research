@@ -207,61 +207,118 @@ def run_ctf_hunt(openai_client, law_client, workspace_id, timerange_hours, start
 # ═══════════════════════════════════════════════════════════════
 
 def analyze_and_discuss(results, flag_intel, kql_query, session, openai_client, model, severity_config, bot_guidance):
-    """
-    Stage 7 + 8 for one flag: the model analyses the query results (coach-gated), then the
-    interactive conversation opens (automatically for a low-confidence local result, on
-    request otherwise). Returns the (possibly refined) analysis dict, or None if skipped.
-    Kept separate so the documentation menu can re-run it with a different model.
-    """
-    llm_analysis = llm_result_analysis_stage(
-        results_csv=results,
-        flag_intel=flag_intel,
-        kql_query=kql_query,
-        session=session,
-        openai_client=openai_client,
-        model=model,
-        severity_config=severity_config
-    )
+    """Analysis only (the chat is one key away in the flag hub). Kept for older callers."""
+    return llm_result_analysis_stage(results_csv=results, flag_intel=flag_intel, kql_query=kql_query,
+                                     session=session, openai_client=openai_client, model=model,
+                                     severity_config=severity_config)
+
+
+def _ai_status_line(llm_analysis, level):
+    """One line that says what the AI has, without leaking a hidden answer."""
     if not llm_analysis:
-        return None
+        return "not run yet"
+    answer = llm_analysis.get("suggested_answer", "")
+    conf = llm_analysis.get("confidence", "Low")
+    if llm_analysis.get("revealed") and answer:
+        return f"revealed: {answer}  ({conf} confidence)"
+    if answer:
+        return f"has a candidate ({conf} confidence) - hidden at coach level {level}, press R to reveal"
+    return f"ran, no answer settled ({conf} confidence) - try the chat or another model"
 
-    import MODEL_SELECTOR
-    is_offline = MODEL_SELECTOR.is_offline_model(model) if model else False
-    confidence = llm_analysis.get('confidence', 'Low').lower()
-    low_confidence = confidence in ['low', 'medium']
 
-    if is_offline and low_confidence:
+def flag_hub(results, flag_intel, kql_query, session, openai_client, model, severity_config, bot_guidance,
+             llm_analysis=None):
+    """
+    The one screen for a flag after its results are in. Returns (outcome, model, llm_analysis)
+    where outcome is 'captured', 'parked' or 'rewrite_kql'. Everything here re-uses an
+    existing stage function; nothing runs unless the analyst presses its key.
+    """
+    row_count = max(0, len([l for l in results.split('\n') if l.strip()]) - 1)
+    while True:
+        level = coach_level(session)
+        model_name = LLM_ROUTER.resolve(model) if model else "none"
+        revealed = bool(llm_analysis and llm_analysis.get("revealed") and llm_analysis.get("suggested_answer"))
+        default_key = 'A' if revealed else '1'
+
         print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
-        print(f"{Fore.LIGHTCYAN_EX}💬 AUTO-OPENING INTERACTIVE CONVERSATION")
+        print(f"{Fore.LIGHTCYAN_EX}🚩 {flag_intel.get('title', 'Flag')}{Fore.RESET}{Fore.LIGHTBLACK_EX}   {row_count} result rows{Fore.RESET}")
         print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}")
-        print(f"{Fore.WHITE}Analysis confidence is {Fore.YELLOW}{confidence.upper()}{Fore.WHITE} - Opening chat for refinement")
-        print(f"{Fore.LIGHTGREEN_EX}Model: {model} (FREE - No API costs){Fore.RESET}\n")
-        open_chat = True
-    else:
-        flush_typeahead()
-        if is_offline:
-            print(f"\n{Fore.LIGHTCYAN_EX}Would you like to refine the analysis?{Fore.RESET}")
-            print(f"{Fore.WHITE}Confidence: {Fore.LIGHTGREEN_EX}{confidence.upper()}{Fore.WHITE} | Model: {Fore.LIGHTGREEN_EX}{model} (FREE){Fore.RESET}")
-        else:
-            print(f"\n{Fore.LIGHTCYAN_EX}Would you like to have a conversation with the AI about these results?{Fore.RESET}")
-            print(f"{Fore.LIGHTYELLOW_EX}Model: {model} ({LLM_ROUTER.cost_label(model)}){Fore.RESET}")
-        conv_choice = input(f"{Fore.WHITE}Start interactive conversation? [Y/n]: {Fore.RESET}").strip().lower()
-        open_chat = conv_choice not in ['n', 'no']
+        print(f"{Fore.WHITE}Question : {Fore.LIGHTYELLOW_EX}{flag_intel.get('objective', '')}{Fore.RESET}")
+        if flag_intel.get('format'):
+            print(f"{Fore.WHITE}Format   : {Fore.LIGHTYELLOW_EX}{flag_intel.get('format')}{Fore.RESET}")
+        print(f"{Fore.WHITE}AI status: {Fore.LIGHTGREEN_EX if revealed else Fore.WHITE}{_ai_status_line(llm_analysis, level)}{Fore.RESET}")
+        print(f"{Fore.LIGHTBLACK_EX}Coach level: {level}   Model: {model_name}{Fore.RESET}\n")
+        print(f"  {Fore.LIGHTGREEN_EX}[A]{Fore.RESET} Answer box - record the answer now")
+        print(f"  {Fore.LIGHTGREEN_EX}[1]{Fore.RESET} Ask the AI to analyze these results ({model_name})")
+        print(f"  {Fore.LIGHTGREEN_EX}[2]{Fore.RESET} ...with a different model")
+        print(f"  {Fore.LIGHTGREEN_EX}[3]{Fore.RESET} Chat with the AI about these results")
+        print(f"  {Fore.LIGHTGREEN_EX}[4]{Fore.RESET} Show the results again")
+        print(f"  {Fore.LIGHTGREEN_EX}[5]{Fore.RESET} Rewrite the KQL query")
+        print(f"  {Fore.LIGHTMAGENTA_EX}[R]{Fore.RESET} Reveal the AI's answer (coach)      {Fore.LIGHTBLACK_EX}[B]{Fore.RESET} Park this flag, back to the flag list")
 
-    if open_chat:
-        refined_analysis = interactive_llm_conversation_stage(
-            llm_analysis=llm_analysis,
-            results_csv=results,
-            flag_intel=flag_intel,
-            kql_query=kql_query,
-            session=session,
-            openai_client=openai_client,
-            model=model,
-            bot_guidance=bot_guidance
-        )
-        if refined_analysis:
-            llm_analysis = refined_analysis
-    return llm_analysis
+        flush_typeahead()
+        try:
+            key = input(f"\n{Fore.LIGHTGREEN_EX}Choice [Enter = {default_key}]: {Fore.RESET}").strip().upper()
+        except (KeyboardInterrupt, EOFError):
+            return 'parked', model, llm_analysis
+        key = key or default_key
+
+        if key == 'A':
+            documented = document_result_stage(flag_intel, session, kql_query, results, llm_analysis=llm_analysis)
+            if documented:
+                return 'captured', model, llm_analysis
+            continue                                     # cancelled inside the answer box - back to the hub
+
+        if key in ('1', '2'):
+            if key == '2':
+                import MODEL_SELECTOR
+                new_model = MODEL_SELECTOR.prompt_model_selection(
+                    input_tokens=LLM_ROUTER.estimate_tokens("Log Data:\n" + results))
+                if not new_model:
+                    continue
+                model = new_model
+                session.state['model'] = model
+                session.save_state()
+            result = llm_result_analysis_stage(results_csv=results, flag_intel=flag_intel, kql_query=kql_query,
+                                               session=session, openai_client=openai_client, model=model,
+                                               severity_config=severity_config)
+            if result:
+                llm_analysis = result
+            continue
+
+        if key == '3':
+            if not llm_analysis:
+                llm_analysis = {"suggested_answer": "", "confidence": "Low", "evidence_rows": [], "evidence_fields": [],
+                                "explanation": "", "correlation": "", "guidance": "", "candidates": [],
+                                "_evidence": EVIDENCE_FILTER.extract_candidates(results, flag_intel)}
+            refined = interactive_llm_conversation_stage(llm_analysis=llm_analysis, results_csv=results,
+                                                         flag_intel=flag_intel, kql_query=kql_query, session=session,
+                                                         openai_client=openai_client, model=model,
+                                                         bot_guidance=bot_guidance)
+            if refined:
+                llm_analysis = refined
+            continue
+
+        if key == '4':
+            display_results_paginated(results)
+            continue
+
+        if key == '5':
+            return 'rewrite_kql', model, llm_analysis
+
+        if key == 'R':
+            if not llm_analysis:
+                print(f"{Fore.YELLOW}Nothing to reveal yet - run the analysis first ([1]).{Fore.RESET}")
+                continue
+            llm_analysis['revealed'] = True
+            display_llm_analysis(llm_analysis, level=3, evidence=llm_analysis.get('_evidence'))
+            continue
+
+        if key == 'B':
+            print(f"{Fore.LIGHTBLACK_EX}Flag parked - nothing recorded. Its results are saved with the session.{Fore.RESET}\n")
+            return 'parked', model, llm_analysis
+
+        print(f"{Fore.RED}Press A, 1-5, R or B.{Fore.RESET}")
 
 
 def hunt_single_flag(session, openai_client, law_client, workspace_id, 
@@ -379,90 +436,15 @@ def hunt_single_flag(session, openai_client, law_client, workspace_id,
         
         # STAGE 5: RESULTS DISPLAY (Paginated)
         display_results_paginated(results)
-        
-        # STAGE 7 + 8: LLM RESULT ANALYSIS + CONVERSATION (coach-gated; re-runnable with another model)
-        flush_typeahead()
-        print(f"\n{Fore.LIGHTCYAN_EX}Would you like the AI to analyze these results?{Fore.RESET}")
-        analyze_choice = input(f"{Fore.WHITE}Run analysis with {LLM_ROUTER.resolve(model)}? [Y/n]: {Fore.RESET}").strip().lower()
-        if analyze_choice not in ['n', 'no']:
-            llm_analysis = analyze_and_discuss(results, flag_intel, kql_query, session, openai_client,
-                                               model, severity_config, bot_guidance)
 
-        # STAGE 9: RESULT DOCUMENTATION MENU (loops so the model can be switched and re-run)
-        while True:
-            doc_action = result_documentation_menu(llm_analysis=llm_analysis, model=model)
-            if doc_action != 'switch_model':
-                break
-            import MODEL_SELECTOR
-            new_model = MODEL_SELECTOR.prompt_model_selection(input_tokens=LLM_ROUTER.estimate_tokens("Log Data:\n" + results))
-            if new_model:
-                model = new_model
-                session.state['model'] = model
-                session.save_state()
-                llm_analysis = analyze_and_discuss(results, flag_intel, kql_query, session, openai_client,
-                                                   model, severity_config, bot_guidance) or llm_analysis
-        
-        if doc_action == 'rewrite_kql':
-            # Loop back to Stage 3 (HUMAN KQL ENTRY)
+        # STAGES 7-9: THE FLAG HUB - one screen the analyst returns to after every action
+        outcome, model, llm_analysis = flag_hub(results, flag_intel, kql_query, session, openai_client,
+                                                model, severity_config, bot_guidance)
+        if outcome == 'rewrite_kql':
             print(f"\n{Fore.LIGHTCYAN_EX}Returning to KQL entry...{Fore.RESET}\n")
-            llm_analysis = None  # Reset LLM analysis for new query
-            continue  # Back to Stage 3
-        
-        elif doc_action == 'use_llm_answer':
-            # Use LLM's suggested answer directly (this counts as a reveal)
-            if llm_analysis and llm_analysis.get("suggested_answer"):
-                llm_analysis['revealed'] = True
-                answer = llm_analysis.get("suggested_answer")
-                explanation = llm_analysis.get("explanation", "")
-                evidence_rows = llm_analysis.get("evidence_rows", [])
-                
-                # Extract evidence rows from CSV
-                import io
-                query_output = "LLM Suggested Answer (auto-extracted)"
-                try:
-                    df = pd.read_csv(io.StringIO(results))
-                    evidence_lines = []
-                    for row_idx in evidence_rows:      # RowId is 1-based
-                        if isinstance(row_idx, int) and 1 <= row_idx <= len(df):
-                            evidence_lines.append(df.iloc[row_idx - 1].to_string())
-                    if evidence_lines:
-                        query_output = '\n'.join(evidence_lines)
-                except:
-                    pass
-                
-                structured_notes = f"""QUERY OUTPUT:
-{query_output}
-
-FINDING (LLM Analysis):
-{explanation}
-"""
-                
-                session.capture_flag(
-                    flag_number=flag_intel['flag_number'],
-                    title=flag_intel['title'],
-                    answer=answer,
-                    notes=structured_notes,
-                    kql_used=kql_query,
-                    table_queried='',
-                    stage=flag_intel.get('mitre', '').split('-')[0].strip() if '-' in flag_intel.get('mitre', '') else '',
-                    mitre=flag_intel.get('mitre', '')
-                )
-                
-                print(f"\n{Fore.LIGHTGREEN_EX}{'='*70}")
-                print(f"{Fore.LIGHTGREEN_EX}✓ FLAG {flag_intel['flag_number']} CAPTURED: {answer}")
-                print(f"{Fore.LIGHTGREEN_EX}{'='*70}{Fore.RESET}\n")
-                
-                return True
-        
-        elif doc_action == 'document':
-            # Document the result for JSON
-            documented = document_result_stage(flag_intel, session, kql_query, results, llm_analysis=llm_analysis)
-            if not documented:
-                return False
-            
-            return True  # Flag completed, exit loop
-        
-        return False
+            llm_analysis = None
+            continue
+        return outcome == 'captured'
 
 
 # ═══════════════════════════════════════════════════════════════
