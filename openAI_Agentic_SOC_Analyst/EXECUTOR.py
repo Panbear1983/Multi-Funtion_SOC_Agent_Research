@@ -5,7 +5,6 @@ import json
 # Third-party libraries
 import pandas as pd
 from color_support import Fore, Style
-from openai import RateLimitError, OpenAIError
 
 # Local modules
 import LLM_ROUTER
@@ -205,8 +204,8 @@ def _enrich(results):
 def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, openai_model, severity_config=None, table_name=None, investigation_context=None):
     """
     Runs the analysis for one prompt (threat hunt, anomaly or CTF):
-      local  (qwen3:8b)      → QwenEnhancer: rules + LLM, chunked if the data is too big
-      cloud  (OpenAI/Claude) → one JSON-mode call through LLM_ROUTER
+      local  (qwen3:8b) → QwenEnhancer: rules + LLM, chunked if the data is too big
+      cloud  (Claude)   → one JSON-mode call through LLM_ROUTER
     Returns {"findings": [...]} for hunts, or the CTF answer dict in CTF mode.
     Never truncates silently: PromptTooLargeError is caught and reported.
     """
@@ -248,7 +247,7 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
                 return _extract_ctf(results)
             return _enrich(results)
 
-        # ── Cloud (OpenAI or Claude) ──
+        # ── Cloud (Claude) ──
         provider = LLM_ROUTER.provider_of(model)
         print(f"{Fore.LIGHTCYAN_EX}Using {provider} model: {model}...{Fore.RESET}")
         schema = (investigation_context or {}).get("json_schema") if is_ctf else None
@@ -266,14 +265,6 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
         print(f"{Fore.LIGHTRED_EX}{Style.BRIGHT}🚨 Prompt too large for {model}:{Style.RESET_ALL} {e}")
         print(f"{Fore.WHITE}Narrow the query (one device, shorter time range, fewer fields) and retry.\n")
         return None
-    except RateLimitError as e:
-        print(f"{Fore.LIGHTRED_EX}{Style.BRIGHT}🚨ERROR: Rate limit or token overage detected!{Style.RESET_ALL}")
-        print(f"{Style.RESET_ALL}——————————\nRaw Error:\n{e}\n——————————")
-        print(f"{Fore.WHITE}Suggestions: use fewer logs, switch to a larger-window model, or retry later.\n")
-        return None
-    except OpenAIError as e:
-        print(f"{Fore.RED}Unexpected OpenAI API error:\n{e}")
-        return None
     except Exception as e:
         print(f"{Fore.RED}Model call failed ({type(e).__name__}): {e}{Fore.RESET}")
         return None
@@ -282,9 +273,8 @@ def hunt(openai_client, threat_hunt_system_message, threat_hunt_user_message, op
 def get_query_context(openai_client, user_message, model):
     """
     Turn the analyst's natural-language request into query_log_analytics arguments.
-    OpenAI models use native tool calling; Claude and the local model return the same
-    argument object as JSON constrained by the tool's parameter schema - so the
-    threat-hunt flow now works fully offline (no more gpt-4o-mini detour).
+    Claude and the local model return the argument object as JSON constrained by the
+    tool's parameter schema - the threat-hunt flow works fully offline.
     """
     print(f"{Fore.LIGHTGREEN_EX}\nDeciding log search parameters based on user request...\n")
     if openai_client is not None:
@@ -293,18 +283,6 @@ def get_query_context(openai_client, user_message, model):
     system_message = PROMPT_MANAGEMENT.SYSTEM_PROMPT_TOOL_SELECTION
     model = LLM_ROUTER.resolve(model)
     tool = PROMPT_MANAGEMENT.TOOLS[0]["function"]
-
-    if LLM_ROUTER.is_openai(model):
-        response = LLM_ROUTER.openai_client().chat.completions.create(
-            model=model,
-            messages=[system_message, user_message],
-            tools=PROMPT_MANAGEMENT.TOOLS,
-            tool_choice="required"
-        )
-        tool_calls = response.choices[0].message.tool_calls or []
-        if not tool_calls:
-            raise ValueError("The model did not choose a query tool - rephrase the request.")
-        return json.loads(tool_calls[0].function.arguments)
 
     # Claude / local: same contract, expressed as a JSON schema
     schema = dict(tool["parameters"])

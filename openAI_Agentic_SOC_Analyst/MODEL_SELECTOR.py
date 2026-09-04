@@ -16,8 +16,7 @@ import TIME_ESTIMATOR
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════
 
-# OpenAI API Tier - https://platform.openai.com/settings/organization/limits
-CURRENT_TIER = "4"  # Options: "free", "1", "2", "3", "4", "5"
+CURRENT_TIER = "4"  # kept for old call signatures (rate tiers were an OpenAI concept)
 DEFAULT_MODEL = LLM_ROUTER.DEFAULT_MODEL   # qwen3:8b - free, offline
 WARNING_RATIO = 0.80  # 80% threshold for warnings
 
@@ -108,51 +107,60 @@ def log_guardrails_violation(model_name, table_name, reason):
 # INITIAL MODEL SELECTION
 # ═══════════════════════════════════════════════════════════════════════
 
-def _print_entry(idx, name, color, input_tokens):
+def model_status(name):
+    """Live readiness check for the dashboard: (ready?, short status text)."""
+    import OLLAMA_CLIENT
+    if LLM_ROUTER.is_local(name):
+        installed = OLLAMA_CLIENT.installed_models()
+        if not installed:
+            return False, "Ollama not running - start it with: ollama serve"
+        if name not in installed:
+            return False, f"not pulled - run: ollama pull {name}"
+        return True, "ready (Ollama running, fits 100% on the GPU)"
+    if LLM_ROUTER.is_claude(name):
+        backend = LLM_ROUTER.claude_backend()
+        if backend == "cli":
+            return True, "ready (your Claude Code login)"
+        if backend == "api":
+            return True, "ready (Anthropic API key)"
+        return False, "not signed in - run `claude` once in a terminal"
+    return False, "unknown provider"
+
+
+def _dashboard_row(idx, kind, name, ready, status, input_tokens):
     m = LLM_ROUTER.info(name)
-    print(f"{color}[{idx}] {name}{Fore.RESET}")
-    print(f"{Fore.WHITE}    {m['label']} | Cost: {LLM_ROUTER.cost_label(name)} | Window: {m['max_input_tokens']:,} tokens")
-    if input_tokens:
+    color = Fore.LIGHTGREEN_EX if ready else Fore.LIGHTBLACK_EX
+    dot = f"{Fore.LIGHTGREEN_EX}●" if ready else f"{Fore.RED}●"
+    eta = ""
+    if input_tokens and ready:
         est = TIME_ESTIMATOR.estimate_time(name, input_tokens)
-        print(f"{Fore.LIGHTBLUE_EX}    Est. time: {TIME_ESTIMATOR.format_time_display(est, input_tokens, name)}{Fore.RESET}")
+        eta = f"   ~{TIME_ESTIMATOR.format_time_display(est, input_tokens, name)}"
+    print(f"  {color}[{idx}] {kind:<6} {name:<16}{Fore.RESET} {dot} {Fore.WHITE}{status}{Fore.RESET}")
+    print(f"      {Fore.LIGHTBLACK_EX}{m['label']} · {LLM_ROUTER.cost_label(name)} · {m['max_input_tokens']:,}-token window{eta}{Fore.RESET}")
 
 
 def prompt_model_selection(input_tokens=None):
     """
-    Interactive numbered menu. Enter = the local model (free, offline).
+    The model dashboard: one local model, one cloud model, each with a live readiness
+    check. Enter = the local model. (OpenAI models were decommissioned 2026-09-04.)
     """
     print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
-    print(f"{Fore.LIGHTCYAN_EX}SELECT LANGUAGE MODEL")
-    print(f"{Fore.LIGHTCYAN_EX}{'='*70}")
+    print(f"{Fore.LIGHTCYAN_EX}🧠 MODELS")
+    print(f"{Fore.LIGHTCYAN_EX}{'='*70}{Fore.RESET}")
     if input_tokens:
-        print(f"{Fore.WHITE}Input size: {input_tokens:,} tokens{Fore.RESET}\n")
-    else:
-        print()
+        print(f"{Fore.LIGHTBLACK_EX}Input size: {input_tokens:,} tokens{Fore.RESET}")
+    print()
 
-    model_list = []
-
-    print(f"{Fore.LIGHTGREEN_EX}═══ OpenAI Models (Cloud/API) ═══{Fore.RESET}\n")
-    for name in LLM_ROUTER.CLOUD_MENU:
-        if LLM_ROUTER.is_openai(name):
-            model_list.append(name)
-            _print_entry(len(model_list), name, Fore.LIGHTGREEN_EX, input_tokens)
-
-    claude_backend = LLM_ROUTER.claude_backend()
-    print(f"\n{Fore.LIGHTMAGENTA_EX}═══ Claude Models (Cloud) - via {CLAUDE_CLIENT.describe_backend()} ═══{Fore.RESET}\n")
-    for name in LLM_ROUTER.CLOUD_MENU:
-        if LLM_ROUTER.is_claude(name):
-            model_list.append(name)
-            _print_entry(len(model_list), name, Fore.LIGHTMAGENTA_EX if claude_backend else Fore.LIGHTBLACK_EX, input_tokens)
-    if not claude_backend:
-        print(f"{Fore.YELLOW}    (Claude unavailable: no API key and no `claude` CLI login){Fore.RESET}")
-
-    print(f"\n{Fore.LIGHTYELLOW_EX}═══ Local Model (Ollama/Offline) - FREE ═══{Fore.RESET}\n")
+    rows = []
     for name in LLM_ROUTER.LOCAL_MENU:
-        model_list.append(name)
-        _print_entry(len(model_list), name, Fore.LIGHTYELLOW_EX, input_tokens)
-        print(f"{Fore.LIGHTBLACK_EX}    ⭐ Default. The only local model that fits this Mac at usable speed.{Fore.RESET}")
-
-    print(f"\n{Fore.LIGHTCYAN_EX}{'─'*70}")
+        rows.append(("Local", name) + model_status(name))
+    for name in LLM_ROUTER.CLOUD_MENU:
+        rows.append(("Cloud", name) + model_status(name))
+    for idx, (kind, name, ready, status) in enumerate(rows, 1):
+        _dashboard_row(idx, kind, name, ready, status, input_tokens)
+    model_list = [r[1] for r in rows]
+    ready_map = {r[1]: r[2] for r in rows}
+    print(f"\n{Fore.LIGHTBLACK_EX}Enter = {DEFAULT_MODEL}. You can also type a model name (e.g. claude-sonnet-5).{Fore.RESET}")
 
     try:  # drop anything pasted while the previous stage was still running
         import sys, termios
@@ -162,28 +170,28 @@ def prompt_model_selection(input_tokens=None):
         pass
     while True:
         try:
-            choice = input(f"{Fore.LIGHTGREEN_EX}Select model [1-{len(model_list)}] or press Enter for {DEFAULT_MODEL}: {Fore.RESET}").strip()
-            if not choice:
-                selected_model = DEFAULT_MODEL
-                break
-            choice_num = int(choice)
-            if 1 <= choice_num <= len(model_list):
-                selected_model = model_list[choice_num - 1]
-                if LLM_ROUTER.is_claude(selected_model) and not claude_backend:
-                    print(f"{Fore.RED}Claude is not available on this machine. Pick another model.{Fore.RESET}")
-                    continue
-                break
-            print(f"{Fore.RED}Please enter a number between 1 and {len(model_list)}.{Fore.RESET}")
-        except ValueError:
-            print(f"{Fore.RED}Invalid input. Enter a number 1-{len(model_list)}.{Fore.RESET}")
+            choice = input(f"{Fore.LIGHTGREEN_EX}Model [1-{len(model_list)}]: {Fore.RESET}").strip()
+        except (KeyboardInterrupt, EOFError):
+            choice = ""
+        if not choice:
+            selected_model = DEFAULT_MODEL
+        elif choice.isdigit() and 1 <= int(choice) <= len(model_list):
+            selected_model = model_list[int(choice) - 1]
+        elif LLM_ROUTER.is_known(choice):
+            selected_model = LLM_ROUTER.resolve(choice)
+        else:
+            print(f"{Fore.RED}Enter 1-{len(model_list)} or a model name.{Fore.RESET}")
+            continue
+        ready = ready_map.get(selected_model)
+        if ready is None:
+            ready, _ = model_status(selected_model)
+        if not ready:
+            print(f"{Fore.RED}{selected_model} is not ready on this machine - pick another.{Fore.RESET}")
+            continue
+        break
 
-    provider = LLM_ROUTER.provider_of(selected_model)
-    color = {"ollama": Fore.LIGHTYELLOW_EX, "claude": Fore.LIGHTMAGENTA_EX}.get(provider, Fore.LIGHTGREEN_EX)
-    print(f"\n{color}✓ Selected: {selected_model}{Fore.RESET}")
-    print(f"{Fore.WHITE}{LLM_ROUTER.describe(selected_model)}")
-    if input_tokens:
-        est = TIME_ESTIMATOR.estimate_time(selected_model, input_tokens)
-        print(f"{Fore.WHITE}Est. time: {TIME_ESTIMATOR.format_time_display(est, input_tokens, selected_model)}")
+    color = Fore.LIGHTYELLOW_EX if LLM_ROUTER.is_local(selected_model) else Fore.LIGHTMAGENTA_EX
+    print(f"\n{color}✓ Selected: {selected_model}{Fore.RESET}  {Fore.LIGHTBLACK_EX}{LLM_ROUTER.describe(selected_model)}{Fore.RESET}")
     print(f"{Fore.LIGHTCYAN_EX}{'='*70}\n")
     return selected_model
 

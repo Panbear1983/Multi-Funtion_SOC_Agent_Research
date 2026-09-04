@@ -6,7 +6,7 @@ Canonical implementation: This module is the single active CTF Hunt Mode.
 Legacy variants have been archived under `archive/` and are no longer
 imported or maintained.
 
-Model access goes through LLM_ROUTER (local qwen3:8b, OpenAI, or Claude) so the
+Model access goes through LLM_ROUTER (local qwen3:8b or Claude) so the
 same code path serves every provider and every call is logged.
 """
 
@@ -1263,7 +1263,7 @@ def _ctf_log_budget_chars(model):
         return 16_000     # ~8K tokens of CSV → ~2-3 min on this Mac; more is slower, not smarter
     if LLM_ROUTER.is_claude(m):
         return 120_000    # 1M window; keep the call snappy and the answer focused
-    return 60_000         # OpenAI
+    return 60_000         # any other cloud model
 
 
 FORMAT_HINT_PATTERNS = {

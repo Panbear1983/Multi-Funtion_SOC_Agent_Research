@@ -3,7 +3,6 @@ import time
 
 # Third-party libraries
 from color_support import Fore, init, Style
-from openai import OpenAI
 from azure.identity import DefaultAzureCredential
 from azure.monitor.query import LogsQueryClient
 
@@ -64,10 +63,9 @@ except Exception as e:
     print(f"{Fore.RED}Failed to create Azure Log Analytics client: {e}{Fore.RESET}")
     exit(1)
 
-# Build OpenAI client and register it with the model router (Claude/local need no client)
-openai_client = OpenAI(api_key=_keys.OPENAI_API_KEY)
-import LLM_ROUTER
-LLM_ROUTER.set_openai_client(openai_client)
+# OpenAI decommissioned 2026-09-04: the engine runs on the local model and Claude only.
+# Pipelines still accept an `openai_client` argument for compatibility; it is always None.
+openai_client = None
 
 # Welcome banner
 print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")

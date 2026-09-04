@@ -1,5 +1,4 @@
-# Get your API Key: https://platform.openai.com/settings/organization/api-keys
-OPENAI_API_KEY = "your-openai-api-key-here"
+# (OpenAI was decommissioned 2026-09-04 - the engine uses the local model and Claude via your Claude Code login)
 
 # Azure Sentinel / Log Analytics
 LOG_ANALYTICS_WORKSPACE_ID = "your-workspace-id-here"

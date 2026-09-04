@@ -22,12 +22,6 @@ class TimeEstimator:
         self.profiles = {
             # local - measured
             'qwen3:8b':        {'base_time': 3,  'prompt_tps': 60,     'gen_tps': 11,  'typical_output': 600, 'load_time': 40},
-            # OpenAI - typical API throughput
-            'gpt-4.1-nano':    {'base_time': 2,  'prompt_tps': 50000,  'gen_tps': 150, 'typical_output': 500},
-            'gpt-4.1':         {'base_time': 3,  'prompt_tps': 40000,  'gen_tps': 80,  'typical_output': 500},
-            'gpt-5-mini':      {'base_time': 4,  'prompt_tps': 60000,  'gen_tps': 90,  'typical_output': 800},
-            'gpt-5':           {'base_time': 6,  'prompt_tps': 45000,  'gen_tps': 60,  'typical_output': 800},
-            'gpt-4o-mini':     {'base_time': 2,  'prompt_tps': 70000,  'gen_tps': 120, 'typical_output': 300},
             # Claude - typical API throughput (CLI bridge adds ~3 s)
             'claude-opus-5':   {'base_time': 5,  'prompt_tps': 40000,  'gen_tps': 50,  'typical_output': 800},
             'claude-sonnet-5': {'base_time': 4,  'prompt_tps': 60000,  'gen_tps': 80,  'typical_output': 800},

@@ -4,12 +4,11 @@ LLM_ROUTER.py - Single front door for every language-model call in the SOC analy
 One registry (MODELS) is the source of truth for which models exist, which provider
 serves them, their real context windows and prices. Every module that needs a model
 reply calls LLM_ROUTER.chat()/chat_json()/chat_stream() and never touches a provider
-SDK directly, so provider quirks (Ollama's num_ctx, Claude's thinking, OpenAI's
-response_format) live in exactly one place.
+SDK directly, so provider quirks (Ollama's num_ctx, Claude's thinking) live in
+exactly one place.
 
-Providers:
+Providers (OpenAI decommissioned 2026-09-04 at Peter's request - "way too many language models"):
   ollama  - local qwen3:8b (the only local model on this Mac that fits in memory)
-  openai  - OpenAI API (key in _keys.py)
   claude  - Anthropic: official SDK when ANTHROPIC_API_KEY is present, otherwise the
             Claude Code CLI bridge that runs on Peter's subscription login
 
@@ -43,30 +42,16 @@ MODELS = {
         "cost_per_million_input": 0.0, "cost_per_million_output": 0.0,
         "thinking": True, "tier": {},
     },
-    # ── OpenAI ──────────────────────────────────────────────────────────
-    "gpt-4.1-nano": {"provider": "openai", "label": "GPT-4.1 nano", "max_input_tokens": 1_047_576, "max_output_tokens": 32_768,
-                     "cost_per_million_input": 0.10, "cost_per_million_output": 0.40, "thinking": False,
-                     "tier": {"free": 40_000, "1": 200_000, "2": 2_000_000, "3": 4_000_000, "4": 10_000_000, "5": 150_000_000}},
-    "gpt-4.1":      {"provider": "openai", "label": "GPT-4.1", "max_input_tokens": 1_047_576, "max_output_tokens": 32_768,
-                     "cost_per_million_input": 1.00, "cost_per_million_output": 8.00, "thinking": False,
-                     "tier": {"free": None, "1": 30_000, "2": 450_000, "3": 800_000, "4": 2_000_000, "5": 30_000_000}},
-    "gpt-5-mini":   {"provider": "openai", "label": "GPT-5 mini", "max_input_tokens": 272_000, "max_output_tokens": 128_000,
-                     "cost_per_million_input": 0.25, "cost_per_million_output": 2.00, "thinking": True,
-                     "tier": {"free": None, "1": 200_000, "2": 2_000_000, "3": 4_000_000, "4": 10_000_000, "5": 180_000_000}},
-    "gpt-5":        {"provider": "openai", "label": "GPT-5", "max_input_tokens": 272_000, "max_output_tokens": 128_000,
-                     "cost_per_million_input": 1.25, "cost_per_million_output": 10.00, "thinking": True,
-                     "tier": {"free": None, "1": 30_000, "2": 450_000, "3": 800_000, "4": 2_000_000, "5": 40_000_000}},
-    "gpt-4o-mini":  {"provider": "openai", "label": "GPT-4o mini (query planning)", "max_input_tokens": 128_000, "max_output_tokens": 16_384,
-                     "cost_per_million_input": 0.15, "cost_per_million_output": 0.60, "thinking": False, "tier": {}, "hidden": True},
     # ── Anthropic / Claude ──────────────────────────────────────────────
     # Prices are Anthropic first-party API rates. On the CLI bridge (subscription) the
     # per-call charge is $0 - the cost column is shown as "subscription" instead.
     "claude-opus-5":   {"provider": "claude", "label": "Claude Opus 5 (best reasoning)", "max_input_tokens": 1_000_000, "max_output_tokens": 128_000,
                         "cost_per_million_input": 5.00, "cost_per_million_output": 25.00, "thinking": True, "tier": {}},
+    # Sonnet/Haiku stay reachable by name (type it at a model prompt) but are off the dashboard.
     "claude-sonnet-5": {"provider": "claude", "label": "Claude Sonnet 5 (fast, strong)", "max_input_tokens": 1_000_000, "max_output_tokens": 128_000,
-                        "cost_per_million_input": 2.00, "cost_per_million_output": 10.00, "thinking": True, "tier": {}},
+                        "cost_per_million_input": 2.00, "cost_per_million_output": 10.00, "thinking": True, "tier": {}, "hidden": True},
     "claude-haiku-4-5": {"provider": "claude", "label": "Claude Haiku 4.5 (cheapest)", "max_input_tokens": 200_000, "max_output_tokens": 64_000,
-                         "cost_per_million_input": 1.00, "cost_per_million_output": 5.00, "thinking": False, "tier": {}},
+                         "cost_per_million_input": 1.00, "cost_per_million_output": 5.00, "thinking": False, "tier": {}, "hidden": True},
 }
 
 # Old names that still appear in saved sessions / older code paths.
@@ -75,6 +60,9 @@ ALIASES = {
     "local": LOCAL_MODEL,
     "local-mix": LOCAL_MODEL,   # the retired two-model hybrid → the one local model
     "gpt-oss:20b": LOCAL_MODEL,  # retired (removed from disk 2026-05-11)
+    # OpenAI models decommissioned 2026-09-04 → old sessions that name them get Claude
+    "gpt-4.1-nano": "claude-opus-5", "gpt-4.1": "claude-opus-5", "gpt-5-mini": "claude-opus-5",
+    "gpt-5": "claude-opus-5", "gpt-4o-mini": "claude-opus-5", "gpt-4o": "claude-opus-5",
     "gemma4:26b": LOCAL_MODEL,   # does not fit in 24 GB - retired 2026-09-03
     "gemma4:e4b": LOCAL_MODEL,   # retired 2026-09-03 (one local model policy)
     "mixtral": LOCAL_MODEL,
@@ -84,14 +72,13 @@ ALIASES = {
     "haiku": "claude-haiku-4-5",
 }
 
-# Menu order for MODEL_SELECTOR (cloud first, then local - local is the default)
-CLOUD_MENU = ["gpt-4.1-nano", "gpt-4.1", "gpt-5-mini", "gpt-5", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]
+# The dashboard: one local model, one cloud model. Local is the default.
+CLOUD_MENU = ["claude-opus-5"]
 LOCAL_MENU = [LOCAL_MODEL]
 DEFAULT_MODEL = LOCAL_MODEL
 
 CALL_LOG = "_llm_calls.jsonl"
 
-_openai_client = None
 
 
 # One exception class for "the prompt cannot fit" - defined in OLLAMA_CLIENT (no heavy
@@ -139,10 +126,6 @@ def is_claude(model: str) -> bool:
     return provider_of(model) == "claude"
 
 
-def is_openai(model: str) -> bool:
-    return provider_of(model) == "openai"
-
-
 def context_limit(model: str) -> int:
     return info(model).get("max_input_tokens", 32_000)
 
@@ -152,18 +135,8 @@ def output_limit(model: str) -> int:
 
 
 def set_openai_client(client) -> None:
-    global _openai_client
-    _openai_client = client
-
-
-def openai_client():
-    """The OpenAI client set at startup, or one built lazily from _keys.py."""
-    global _openai_client
-    if _openai_client is None:
-        from openai import OpenAI
-        import _keys
-        _openai_client = OpenAI(api_key=_keys.OPENAI_API_KEY)
-    return _openai_client
+    """Kept for old call sites; OpenAI is decommissioned, so this is a no-op."""
+    return None
 
 
 def claude_backend() -> str | None:
@@ -179,9 +152,9 @@ def cost_label(model: str) -> str:
         return "unknown"
     if m["provider"] == "ollama":
         return "Free (local)"
-    if m["provider"] == "claude" and claude_backend() == "cli":
+    if claude_backend() == "cli":
         return "Subscription (Claude Code login)"
-    return f"${m['cost_per_million_input']:.2f} / ${m['cost_per_million_output']:.2f} per M tokens"
+    return f"${m['cost_per_million_input']:.2f} / ${m['cost_per_million_output']:.2f} per M tokens (API key)"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -299,22 +272,8 @@ def chat(messages, model, *, json_mode=False, json_schema=None, temperature=0.1,
                                             json_mode=json_mode, max_tokens=max_tokens,
                                             think=think, timeout=timeout or 900)
             record.update(meta)
-        else:  # openai
-            kwargs = {"model": m, "messages": messages}
-            if json_schema:
-                kwargs["response_format"] = {"type": "json_schema",
-                                             "json_schema": {"name": "reply", "schema": json_schema, "strict": False}}
-            elif json_mode:
-                kwargs["response_format"] = {"type": "json_object"}
-            # gpt-5 family rejects custom temperature; older models accept it
-            if not m.startswith("gpt-5") and temperature is not None:
-                kwargs["temperature"] = temperature
-            resp = openai_client().chat.completions.create(**kwargs)
-            text = resp.choices[0].message.content or ""
-            u = getattr(resp, "usage", None)
-            record.update({"input_tokens": getattr(u, "prompt_tokens", None),
-                           "output_tokens": getattr(u, "completion_tokens", None),
-                           "stop": resp.choices[0].finish_reason})
+        else:
+            raise ValueError(f"No provider for model '{m}' - only the local model and Claude are wired.")
         record["seconds"] = round(time.time() - t0, 1)
         record["ok"] = True
         _log(record)
@@ -360,14 +319,7 @@ def chat_stream(messages, model, *, temperature=0.3, max_tokens=None, think=None
             n_chars = len(text)
             yield text
         else:
-            kwargs = {"model": m, "messages": messages, "stream": True}
-            if not m.startswith("gpt-5"):
-                kwargs["temperature"] = temperature
-            for ev in openai_client().chat.completions.create(**kwargs):
-                delta = ev.choices[0].delta.content if ev.choices else None
-                if delta:
-                    n_chars += len(delta)
-                    yield delta
+            raise ValueError(f"No provider for model '{m}' - only the local model and Claude are wired.")
         _log({"model": m, "provider": provider, "purpose": purpose or "stream", "est_input_tokens": est,
               "output_chars": n_chars, "seconds": round(time.time() - t0, 1), "ok": True, "stream": True})
     except Exception as e:
@@ -428,5 +380,5 @@ def describe(model: str) -> str:
     d = info(m)
     if not d:
         return f"{model} (unknown)"
-    where = {"ollama": "Local/Offline", "openai": "OpenAI cloud", "claude": "Claude cloud"}[d["provider"]]
+    where = {"ollama": "Local/Offline", "claude": "Claude cloud"}.get(d["provider"], d["provider"])
     return f"{m} - {d['label']} | {where} | {cost_label(m)} | {d['max_input_tokens']:,} token window"

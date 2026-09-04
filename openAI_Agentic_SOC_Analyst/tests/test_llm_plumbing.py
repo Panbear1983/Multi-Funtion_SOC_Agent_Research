@@ -81,8 +81,20 @@ def test_estimate_accepts_messages_and_strings():
 
 @pytest.mark.parametrize("name", LLM_ROUTER.CLOUD_MENU + LLM_ROUTER.LOCAL_MENU)
 def test_every_menu_model_has_a_provider(name):
-    assert LLM_ROUTER.provider_of(name) in ("ollama", "openai", "claude")
+    assert LLM_ROUTER.provider_of(name) in ("ollama", "claude")
     assert name in GUARDRAILS.ALLOWED_MODELS
+
+
+def test_dashboard_is_exactly_one_local_and_one_cloud_model():
+    assert LLM_ROUTER.LOCAL_MENU == ["qwen3:8b"]
+    assert LLM_ROUTER.CLOUD_MENU == ["claude-opus-5"]
+
+
+@pytest.mark.parametrize("gone", ["gpt-4.1-nano", "gpt-4.1", "gpt-5-mini", "gpt-5", "gpt-4o-mini"])
+def test_openai_models_are_decommissioned_but_old_sessions_still_resolve(gone):
+    assert gone not in GUARDRAILS.ALLOWED_MODELS
+    assert LLM_ROUTER.provider_of(gone) == "claude"      # old sessions naming them get Claude
+    assert gone not in LLM_ROUTER.MODELS
 
 
 @pytest.mark.parametrize("old", ["qwen", "local-mix", "gpt-oss:20b", "gemma4:26b", "gemma4:e4b", "mixtral"])

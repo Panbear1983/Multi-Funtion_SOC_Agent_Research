@@ -1354,10 +1354,6 @@ class QwenEnhancer:
         # Post-process: Boost confidence when evidence is strong (no token cost)
         combined_findings = self._boost_confidence_if_evidence_strong(combined_findings)
         
-        # Optionally refine with GPT-4/5 for better quality (hybrid mode)
-        if self.use_gpt_refinement and self.openai_client and combined_findings:
-            combined_findings = self.refine_findings_with_gpt(combined_findings)
-        
         print(f"{Fore.WHITE}Enhanced analysis complete: {len(combined_findings)} total findings")
         
         return {"findings": combined_findings}
@@ -1549,86 +1545,6 @@ Take ownership of your findings."""
             return {"findings": []}
         results = LLM_ROUTER.extract_json(content)
         return results if results else {"findings": []}
-    
-    def refine_findings_with_gpt(self, raw_findings, gpt_model=None):
-        """
-        Use GPT-4/5 to refine and enhance findings from local SLM
-        This runs AFTER data crunching is complete (small payload)
-        Includes anti-hallucination validation
-        """
-        if not self.openai_client or not self.use_gpt_refinement:
-            return raw_findings
-        
-        if not raw_findings:
-            return raw_findings
-        
-        model = gpt_model or self.refinement_model
-        
-        print(f"{Fore.LIGHTCYAN_EX}Refining {len(raw_findings)} findings with {model}...{Fore.RESET}")
-        
-        # Build concise summary of findings
-        findings_summary = {
-            "total_findings": len(raw_findings),
-            "findings": raw_findings
-        }
-        
-        refinement_prompt = f"""You are an expert SOC analyst reviewing preliminary threat detection findings.
-
-⚠️ CRITICAL RULES - VIOLATION WILL INVALIDATE THE REPORT:
-1. NEVER invent or add IOCs (IPs, hashes, accounts, devices) not in the original findings
-2. NEVER create timestamps or log lines that don't exist in the source data
-3. NEVER add attack techniques or MITRE mappings not already identified
-4. DO NOT speculate about data not provided
-5. ONLY enhance clarity, structure, and recommendations based on EXISTING data
-6. If you add context, CLEARLY mark it as "[CONTEXT]"
-
-YOUR JOB:
-- Improve descriptions (clearer, more professional)
-- Better MITRE technique explanations (use official ATT&CK descriptions)
-- More actionable recommendations (specific steps based on actual findings)
-- Organize information better
-- Fix grammar/structure
-
-YOU MUST PRESERVE:
-- All original IOCs exactly as provided
-- All log lines exactly as provided
-- All confidence levels (unless lowering due to false positive)
-- All timestamps and factual data
-
-ORIGINAL FINDINGS (YOUR ONLY SOURCE OF TRUTH):
-{json.dumps(findings_summary, indent=2)}
-
-Return refined findings in same JSON format."""
-
-        try:
-            response = self.openai_client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a security analyst editor. Refine and clarify findings WITHOUT adding factual data not in the source. Hallucinating IOCs or log data is a critical failure."
-                    },
-                    {
-                        "role": "user",
-                        "content": refinement_prompt
-                    }
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,  # Very low temp = less creativity = less hallucination
-                seed=42           # Deterministic output
-            )
-            
-            refined = json.loads(response.choices[0].message.content)
-            
-            # Validate before returning
-            validated = self._validate_refined_findings(raw_findings, refined.get("findings", []))
-            
-            print(f"{Fore.LIGHTGREEN_EX}✓ Refinement complete{Fore.RESET}")
-            return validated
-        
-        except Exception as e:
-            print(f"{Fore.YELLOW}GPT refinement failed: {e}. Using original findings.{Fore.RESET}")
-            return raw_findings
     
     def _validate_refined_findings(self, original_findings, refined_findings):
         """
