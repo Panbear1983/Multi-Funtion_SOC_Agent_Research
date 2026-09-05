@@ -20,10 +20,10 @@ PATTERNS=(
   'AKIA[0-9A-Z]{16}'                                # AWS access key id
   'ghp_[A-Za-z0-9]{36}'                             # GitHub PAT
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'             # private key blob
-  '(OPENROUTER[A-Z_]*KEY|BRAVE_API_KEY|TELEGRAM_BOT_TOKEN|[A-Z_]*_SECRET|[A-Z_]*API_KEY|[A-Z_]*_TOKEN)[[:space:]]*[:=][[:space:]]*['"'"'"]?[A-Za-z0-9_.\-]{16,}'
+  '(OPENROUTER[A-Z_]*KEY|BRAVE_API_KEY|TELEGRAM_BOT_TOKEN|[A-Z_]*_SECRET|[A-Z_]*API_KEY|[A-Z_]*_TOKEN)[[:space:]]*[:=][[:space:]]*['"'"'"]?[^[:space:]'"'"'"]{16,}'   # any 16+ non-space chars (Azure secrets contain ~)
 )
 # placeholder values that are safe (templates/examples)
-PLACEHOLDER='your_key_here|your_token_here|your_id_here|changeme|xxxx|<[^>]+>|example|placeholder|REDACTED'
+PLACEHOLDER='your[-_][a-z-]*[-_]here|your_key_here|your_token_here|your_id_here|changeme|xxxx|<[^>]+>|example|placeholder|REDACTED'
 
 # ---- filenames that must never be committed ------------------------------
 BLOCKED_FILES='(^|/)_keys\.py$|(^|/)\.env$|(^|/)\.env\.[^t]|(^|/)[^/]*\.pem$|(^|/)[^/]*\.key$|(^|/)id_rsa|(^|/)credentials(/|$)|(^|/)auth-profiles\.json$|(^|/)data/'

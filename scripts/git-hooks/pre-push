@@ -7,12 +7,21 @@ status=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$Z" ] && continue                  # branch deletion
   if [ "$remote_sha" = "$Z" ]; then
-    range="$local_sha"                                 # new branch: scan all its commits
-    src=(git diff "$(git hash-object -t tree /dev/null)".."$local_sha")
+    # New branch: scan only what is NOT already on the remote's main (a whole-tree scan
+    # re-flagged the placeholder in _keys.py.example on 2026-09-05 and blocked a clean
+    # write-up). Fall back to the whole tree only if origin/main is unknown.
+    if git rev-parse --verify -q origin/main >/dev/null; then
+      base="$(git merge-base origin/main "$local_sha")"
+      src=(git diff "$base..$local_sha")
+      export STAGED_FILES="$(git diff --name-only "$base..$local_sha" 2>/dev/null)"
+    else
+      src=(git diff "$(git hash-object -t tree /dev/null)".."$local_sha")
+      export STAGED_FILES="$(git ls-tree -r --name-only "$local_sha" 2>/dev/null)"
+    fi
   else
     src=(git diff "$remote_sha..$local_sha")           # scan only new commits
+    export STAGED_FILES="$(git diff --name-only ${remote_sha}..${local_sha} 2>/dev/null)"
   fi
-  export STAGED_FILES="$(git diff --name-only ${remote_sha}..${local_sha} 2>/dev/null)"
   "$DIR/_scan.sh" "${src[@]}" || status=1
 done
 [ "$status" -ne 0 ] && echo "Push blocked by secret-scan guardrail." && exit 1
