@@ -2306,6 +2306,17 @@ def writeup_stage(session, model=None, openai_client=None):
         if ans == "n":
             use_model = None
 
+    # Series title = the H1 and the filename on GitHub (e.g. "Threat Hunt SAGA#3: Bridge Takeover")
+    flush_typeahead()
+    current_title = state.get('project_name') or (state.get('hunt_form') or {}).get('title') or 'Threat Hunt'
+    try:
+        typed = input(f"{Fore.LIGHTGREEN_EX}Title for GitHub [{current_title}]: {Fore.RESET}").strip()
+    except (KeyboardInterrupt, EOFError):
+        typed = ""
+    if typed:
+        state['project_name'] = typed
+        session.save_state()
+
     if use_model:
         print(f"{Fore.LIGHTBLACK_EX}Drafting narrative sections... (local model: 2-4 minutes){Fore.RESET}")
     markdown = REPORT_GENERATOR.build_report(state, model=use_model, openai_client=openai_client)
@@ -2342,7 +2353,9 @@ def writeup_stage(session, model=None, openai_client=None):
         print(f"{Fore.LIGHTBLACK_EX}Not published. You can publish later from the WHAT'S NEXT menu.{Fore.RESET}\n")
         return path
     try:
-        url = PUBLISH.publish(path, title=state.get('project_name') or filename, root=root)
+        index_path = PUBLISH.update_index(REPORT_GENERATOR.index_entry(state), root=root)
+        print(f"{Fore.LIGHTBLACK_EX}Index entry added to {os.path.relpath(index_path, root)}{Fore.RESET}")
+        url = PUBLISH.publish(path, title=state.get('project_name') or filename, root=root, extra_paths=[index_path])
         state['writeup_pr'] = url
         session.save_state()
         print(f"\n{Fore.LIGHTGREEN_EX}✓ Pull request: {url}{Fore.RESET}\n")

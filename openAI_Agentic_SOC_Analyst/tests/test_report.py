@@ -71,3 +71,67 @@ def test_perimeters_and_map():
 def test_filename_matches_convention():
     assert REPORT_GENERATOR.default_filename(make_state()) == "(CTF) Threat Hunt SAGA#3: Bridge Takeover.md"
     assert PUBLISH.slugify("Threat Hunt SAGA#3: Bridge Takeover") == "threat-hunt-saga-3-bridge-takeover"
+
+
+# ── generator fixes + hunt index (2026-09-05) ──────────────────────────────
+
+def test_timestamps_are_normalised_and_tactic_ids_accepted():
+    st = make_state()
+    st["flags_captured"][0]["notes"] = "QUERY OUTPUT:\n11/25/2025, 6:09:18.203 AM\nazuki-adminpc\n\nFINDING:\nok"
+    facts = REPORT_GENERATOR.collect_facts(st)
+    f1 = facts["flags"][0]
+    assert f1["timestamp"] == "2025-11-25 06:09:18"
+    assert facts["date_range"] == "2025-11-25 to 2025-11-25"
+    assert ("TA0008", "Lateral Movement (tactic)") in f1["techniques"]
+
+
+def test_device_guess_never_picks_ordinary_words():
+    assert REPORT_GENERATOR._device_hint("rows 1-5 show nothing", "the ws value") == ""
+    assert REPORT_GENERATOR._device_hint("logon to azuki-adminpc at 06:09") == "azuki-adminpc"
+
+
+INDEX_FIXTURE = """# 🎯 Threat Hunting Projects - CTF Collection
+
+Intro paragraph.
+
+## 📚 Threat Hunt Reports
+
+### 1. 🚢 [Threat Hunt SAGA#2: Cargo Hold](./x.md)
+**Flags:** 20
+
+blurb
+
+---
+
+### 2. 🚪 [Threat Hunt SAGA#1: Port of Entry](./y.md)
+**Flags:** 20
+
+blurb
+
+---
+
+## 🎓 Learning Objectives
+
+- **Initial Access Techniques:** RDP
+"""
+
+
+def test_index_entry_shape_and_insertion_renumbers():
+    st = make_state()
+    entry = REPORT_GENERATOR.index_entry(st, emoji="🌉", focus="RDP pivot, C2, exfiltration", blurb="Third act.")
+    assert entry.startswith("### 1. 🌉 [Threat Hunt SAGA#3: Bridge Takeover](./%28CTF%29%20Threat%20Hunt%20SAGA%233%3A%20Bridge%20Takeover.md)")
+    assert "**Flags:** 2" in entry and "**Date Completed:** 2026-09-03" in entry
+    out = REPORT_GENERATOR.insert_index_entry(INDEX_FIXTURE, entry)
+    heads = [l for l in out.splitlines() if l.startswith("### ")]
+    assert heads[0].startswith("### 1. 🌉 [Threat Hunt SAGA#3")
+    assert heads[1].startswith("### 2. 🚢 [Threat Hunt SAGA#2") and heads[2].startswith("### 3. 🚪 [Threat Hunt SAGA#1")
+    assert "## 🎓 Learning Objectives" in out and out.index("Learning Objectives") > out.index("### 3.")
+
+
+def test_index_insertion_is_idempotent():
+    st = make_state()
+    entry = REPORT_GENERATOR.index_entry(st, blurb="v1")
+    once = REPORT_GENERATOR.insert_index_entry(INDEX_FIXTURE, entry)
+    twice = REPORT_GENERATOR.insert_index_entry(once, REPORT_GENERATOR.index_entry(st, blurb="v2"))
+    assert twice.count("Threat Hunt SAGA#3") == 1 and "v2" in twice and "v1" not in twice
+    assert [l[:6] for l in twice.splitlines() if l.startswith("### ")] == ["### 1.", "### 2.", "### 3."]

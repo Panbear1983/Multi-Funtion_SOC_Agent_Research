@@ -23,9 +23,9 @@ HR = '<hr style="height: 4px; background-color: grey; border: none; margin-top: 
 DRAFT = "<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->"
 SHOT = "<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->"
 
-TECH_RE = re.compile(r"\(?\b(T\d{4}(?:\.\d{3})?)\b\)?")
+TECH_RE = re.compile(r"\(?\b(TA?\d{4}(?:\.\d{3})?)\b\)?")
 TS_RE = re.compile(r"\b(20\d\d-\d\d-\d\d[T ]\d\d:\d\d(?::\d\d)?|\d{1,2}/\d{1,2}/20\d\d,? \d{1,2}:\d\d(?::\d\d)?(?:\.\d+)? ?[AP]?M?)")
-DEVICE_RE = re.compile(r"\b(azuki-[\w\-]+|[\w\-]*(?:pc|server|srv|vm|dc|ws)\d*[\w\-]*)\b", re.I)
+DEVICE_RE = re.compile(r"\b([a-z0-9]+-(?:adminpc|fileserver\d*|sl|dc\d*|srv\d*|ws\d+|pc\d+|vm\d+)|azuki-[\w\-]+)\b", re.I)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -61,13 +61,28 @@ def _techniques(refs):
         m = TECH_RE.search(r)
         if m:
             name = TECH_RE.sub("", r).strip(" :-–—()")
+            if m.group(1).startswith("TA") and "tactic" not in name.lower():
+                name = f"{name} (tactic)"
             out.append((m.group(1), name))
     return out
 
 
+def _normalize_ts(txt: str) -> str:
+    """'11/25/2025, 6:09:18.203 AM' or '2025-11-25T06:09:18Z' → '2025-11-25 06:09:18' (unchanged if unknown)."""
+    t = txt.strip()
+    for fmt in ("%m/%d/%Y, %I:%M:%S.%f %p", "%m/%d/%Y, %I:%M:%S %p", "%m/%d/%Y %I:%M:%S.%f %p", "%m/%d/%Y %I:%M:%S %p",
+                "%m/%d/%Y, %I:%M %p", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(t, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    m = re.match(r"(\d{4}-\d\d-\d\d)[T ](\d\d:\d\d:\d\d)", t)
+    return f"{m.group(1)} {m.group(2)}" if m else t
+
+
 def _first_timestamp(text: str):
     m = TS_RE.search(text or "")
-    return m.group(1) if m else ""
+    return _normalize_ts(m.group(1)) if m else ""
 
 
 def _device_hint(*texts):
@@ -336,3 +351,48 @@ def default_filename(state: dict) -> str:
     title = (state.get("project_name") or (state.get("hunt_form") or {}).get("title") or "Threat Hunt").strip()
     safe = re.sub(r'[\\/*?"<>|]+', "", title).strip()   # ':' kept - matches "(CTF) Threat Hunt SAGA#2: Cargo Hold.md"
     return f"(CTF) {safe}.md"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HUNT INDEX (Threat_Hunting_Projects/README.md) - newest first, numbered
+# ═══════════════════════════════════════════════════════════════════════
+
+INDEX_HEADER = "## 📚 Threat Hunt Reports"
+
+
+def index_entry(state: dict, emoji: str = "🚩", focus: str = "", blurb: str = "") -> str:
+    """One index block for this hunt, in the exact shape of the existing entries."""
+    from urllib.parse import quote
+    facts = collect_facts(state)
+    fname = default_filename(state)
+    link = "./" + quote(fname, safe="")
+    tactics = []
+    for f in facts["flags"]:
+        t = f["tactic"]
+        if t and t not in tactics:
+            tactics.append(t)
+    focus = focus or ", ".join(tactics[:7]) or "threat hunt"
+    n_flags = len(facts["flags"])
+    body = blurb or (facts.get("hunt_description") or "").split("\n")[0][:400] or "See the report."
+    return (f"### 1. {emoji} [{facts['title']}]({link})\n"
+            f"**Date Completed:** {facts['date_completed']}  \n"
+            f"**Environment:** Cyber Range AZURE LAW  \n"
+            f"**Focus:** {focus}  \n"
+            f"**Flags:** {n_flags}\n\n{body}\n\n---\n\n")
+
+
+def insert_index_entry(readme_text: str, entry: str) -> str:
+    """
+    Insert `entry` as ### 1. right under the reports header and renumber the rest.
+    Idempotent: if an entry with the same title link already exists it is replaced in place.
+    """
+    title = re.search(r"### 1\. .*?\[(.+?)\]", entry).group(1)
+    blocks = re.split(r"(?m)^(?=### \d+\. )", readme_text)
+    head, rest = blocks[0], blocks[1:]
+    # drop an existing block for the same title (re-publish)
+    rest = [b for b in rest if f"[{title}]" not in b.split("\n", 1)[0]]
+    rest.insert(0, entry)
+    out = []
+    for i, b in enumerate(rest, 1):
+        out.append(re.sub(r"^### \d+\. ", f"### {i}. ", b, count=1))
+    return head + "".join(out)

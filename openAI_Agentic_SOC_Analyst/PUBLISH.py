@@ -58,15 +58,28 @@ def preflight(root: str) -> dict:
     return info
 
 
-def publish(report_path: str, title: str, body: str = "", base: str = "main", root: str | None = None) -> str:
+def update_index(entry: str, root: str | None = None) -> str:
+    """Insert the hunt's block into Threat_Hunting_Projects/README.md (newest first). Returns the path."""
+    import REPORT_GENERATOR
+    root = root or repo_root()
+    path = os.path.join(root, REPORT_DIR, "README.md")
+    text = open(path, encoding="utf-8").read() if os.path.exists(path) else f"# 🎯 Threat Hunting Projects\n\n{REPORT_GENERATOR.INDEX_HEADER}\n\n"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(REPORT_GENERATOR.insert_index_entry(text, entry))
+    return path
+
+
+def publish(report_path: str, title: str, body: str = "", base: str = "main", root: str | None = None,
+            extra_paths=()) -> str:
     """
-    Branch → commit the report → push → PR. Returns the PR URL (or the branch URL if `gh` is absent).
-    Raises PublishError with the exact git/gh message on any failure.
+    Branch → commit the report (+ the index README and any extra_paths) → push → PR.
+    Returns the PR URL. Raises PublishError with the exact git/gh message on any failure.
     """
     root = root or repo_root()
     rel = os.path.relpath(report_path, root)
     if not os.path.exists(report_path):
         raise PublishError(f"Report file not found: {report_path}")
+    rels = [rel] + [os.path.relpath(p, root) for p in extra_paths if os.path.exists(p)]
 
     stamp = datetime.now().strftime("%Y%m%d")
     branch = f"threat-hunt-{slugify(title)}-{stamp}"
@@ -79,7 +92,7 @@ def publish(report_path: str, title: str, body: str = "", base: str = "main", ro
     else:
         _run(["git", "checkout", "-b", branch], cwd=root)
     try:
-        _run(["git", "add", "--", rel], cwd=root)
+        _run(["git", "add", "--", *rels], cwd=root)
         staged = _run(["git", "diff", "--cached", "--name-only"], cwd=root, check=False)
         if not staged:
             raise PublishError("Nothing new to commit - the report is unchanged.")
