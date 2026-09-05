@@ -35,7 +35,8 @@ def repo_root(start: str | None = None) -> str:
 
 def slugify(title: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-    return s[:60] or "threat-hunt"
+    s = re.sub(r"^threat-hunt-", "", s)      # branch is prefixed "threat-hunt-" already
+    return s[:60] or "hunt"
 
 
 def write_report_file(markdown: str, filename: str, root: str | None = None) -> str:

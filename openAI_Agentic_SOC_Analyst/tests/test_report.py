@@ -70,7 +70,7 @@ def test_perimeters_and_map():
 
 def test_filename_matches_convention():
     assert REPORT_GENERATOR.default_filename(make_state()) == "(CTF) Threat Hunt SAGA#3: Bridge Takeover.md"
-    assert PUBLISH.slugify("Threat Hunt SAGA#3: Bridge Takeover") == "threat-hunt-saga-3-bridge-takeover"
+    assert PUBLISH.slugify("Threat Hunt SAGA#3: Bridge Takeover") == "saga-3-bridge-takeover"
 
 
 # ── generator fixes + hunt index (2026-09-05) ──────────────────────────────
