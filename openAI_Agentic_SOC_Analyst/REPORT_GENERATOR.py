@@ -19,6 +19,7 @@ import json
 import re
 from datetime import datetime
 
+REPORT_DIR = "Threat_Hunting_Projects"   # kept in sync with PUBLISH.REPORT_DIR by hand (no circular import)
 HR = '<hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">'
 DRAFT = "<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->"
 SHOT = "<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->"
@@ -171,10 +172,18 @@ NARRATIVE_SCHEMA = {
         "timeline_events": {"type": "array", "items": {"type": "object", "properties": {
             "flag": {"type": "integer"}, "event": {"type": "string"}},
             "required": ["flag", "event"], "additionalProperties": False}},
+        "profile_intro": {"type": "string"},
     },
-    "required": ["overview", "diamond", "remediation", "lessons", "conclusion", "workflow", "timeline_events"],
+    "required": ["overview", "diamond", "remediation", "lessons", "conclusion", "workflow", "timeline_events",
+                 "profile_intro"],
     "additionalProperties": False,
 }
+
+# Real examples from Peter's profile page, given to the model as a style guide so a new
+# hunt's one-line intro reads like the others instead of like a report abstract.
+PROFILE_INTRO_EXAMPLES = """- an insider hiding behind fake HR automation to alter performance records, dump credentials and bury the audit trail.
+- the attacker's return 72 hours later - RDP pivot to the file server, hidden staging, LSASS dumping, cloud exfiltration and Run-key persistence using only built-in tools.
+- a multi-phase PowerShell and LOLBin intrusion that stole privileged credentials, moved laterally and exfiltrated financial data through cloud services."""
 
 
 def draft_narrative(facts: dict, model: str, openai_client=None) -> dict:
@@ -204,6 +213,11 @@ Produce:
 - conclusion: 1 paragraph describing the kill chain with arrows (a → b → c), naming the tools used
 - workflow: for EVERY flag number, one sentence in this exact style: "<what the step established>; the <thing> was **\\"<answer>\\"**."
 - timeline_events: for EVERY flag number, a 3-6 word event label (e.g. "RDP pivot to admin PC")
+- profile_intro: ONE sentence (no period at the start, lowercase first word, ending with a period)
+  that will appear on Peter's GitHub profile page as "- **[{title}](<link>)** — <profile_intro>".
+  Match the tone and length of these existing ones exactly - specific tools and techniques, no
+  fluff, no "this report" framing:
+{PROFILE_INTRO_EXAMPLES}
 """
     text = LLM_ROUTER.chat([{"role": "user", "content": prompt}], model, json_mode=True,
                            json_schema=NARRATIVE_SCHEMA, temperature=0.3, think=False,
@@ -220,7 +234,12 @@ def _esc(v: str) -> str:
     return (v or "").replace("|", "\\|").replace("\n", " ")
 
 
-def build_report(state: dict, model: str | None = None, openai_client=None, contributors: dict | None = None) -> str:
+def draft_facts_and_narrative(state: dict, model: str | None = None, openai_client=None) -> tuple[dict, dict]:
+    """
+    One call that does the (only) LLM round-trip for a write-up. Callers that need both the
+    rendered report AND the profile-page intro (writeup_stage) should call this ONCE and reuse
+    the result for render_report() and profile_bullet(), instead of drafting twice.
+    """
     facts = collect_facts(state)
     nar = {}
     if model and facts["flags"]:
@@ -228,6 +247,10 @@ def build_report(state: dict, model: str | None = None, openai_client=None, cont
             nar = draft_narrative(facts, model, openai_client)
         except Exception as e:  # the structured report is still produced without prose
             nar = {"_error": str(e)}
+    return facts, nar
+
+
+def render_report(facts: dict, nar: dict, contributors: dict | None = None) -> str:
     c = {"sandbox": "[Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)",
          "designer": "<!-- Hunt Design Master name -->",
          "wingbot": "[MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)"}
@@ -347,10 +370,32 @@ def build_report(state: dict, model: str | None = None, openai_client=None, cont
     return "\n".join(L)
 
 
+def build_report(state: dict, model: str | None = None, openai_client=None, contributors: dict | None = None) -> str:
+    """Convenience wrapper: draft + render in one call. writeup_stage() calls the two halves
+    separately so it can reuse the same `nar` for the profile-page intro without a second LLM call."""
+    facts, nar = draft_facts_and_narrative(state, model, openai_client)
+    return render_report(facts, nar, contributors)
+
+
+def _safe_title(title: str) -> str:
+    return re.sub(r'[\\/*?"<>|]+', "", (title or "Threat Hunt").strip()).strip()
+
+
 def default_filename(state: dict) -> str:
-    title = (state.get("project_name") or (state.get("hunt_form") or {}).get("title") or "Threat Hunt").strip()
-    safe = re.sub(r'[\\/*?"<>|]+', "", title).strip()   # ':' kept - matches "(CTF) Threat Hunt SAGA#2: Cargo Hold.md"
-    return f"(CTF) {safe}.md"
+    title = state.get("project_name") or (state.get("hunt_form") or {}).get("title") or "Threat Hunt"
+    return f"(CTF) {_safe_title(title)}.md"
+
+
+def profile_bullet(facts: dict, nar: dict, repo: str = "Panbear1983/Multi-Funtion_SOC_Agent_Research") -> str:
+    """
+    The bullet line for Peter's GitHub profile "Threat Hunting Case Studies" list, in the
+    exact style of the existing ones: '- **[Title](<full blob URL>)** — one-line intro.'
+    """
+    from urllib.parse import quote
+    fname = f"(CTF) {_safe_title(facts['title'])}.md"
+    url = f"https://github.com/{repo}/blob/main/{REPORT_DIR}/{quote(fname, safe='')}"
+    intro = (nar.get("profile_intro") or "").strip() or "see the write-up for the full investigation."
+    return f"- **[{facts['title']}](<{url}>)** — {intro}"
 
 
 # ═══════════════════════════════════════════════════════════════════════

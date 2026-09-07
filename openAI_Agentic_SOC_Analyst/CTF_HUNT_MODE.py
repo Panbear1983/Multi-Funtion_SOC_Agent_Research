@@ -2319,7 +2319,9 @@ def writeup_stage(session, model=None, openai_client=None):
 
     if use_model:
         print(f"{Fore.LIGHTBLACK_EX}Drafting narrative sections... (local model: 2-4 minutes){Fore.RESET}")
-    markdown = REPORT_GENERATOR.build_report(state, model=use_model, openai_client=openai_client)
+    # One LLM round-trip, reused for the report AND the profile-page intro below.
+    facts, nar = REPORT_GENERATOR.draft_facts_and_narrative(state, model=use_model, openai_client=openai_client)
+    markdown = REPORT_GENERATOR.render_report(facts, nar)
     filename = REPORT_GENERATOR.default_filename(state)
     try:
         path = PUBLISH.write_report_file(markdown, filename)
@@ -2340,27 +2342,52 @@ def writeup_stage(session, model=None, openai_client=None):
     except Exception as e:
         print(f"{Fore.YELLOW}Not a git repo here ({e}) - publish skipped. The file is ready to add by hand.{Fore.RESET}\n")
         return path
-    print(f"{Fore.WHITE}Publish to GitHub as a pull request?{Fore.RESET}")
+    print(f"{Fore.WHITE}Publish to GitHub now?{Fore.RESET} {Fore.LIGHTBLACK_EX}This pushes the write-up, opens a pull request, "
+          f"merges it onto main, and adds it to your profile page — no pause after this to review it.{Fore.RESET}")
     print(f"{Fore.LIGHTBLACK_EX}  remote: {info['remote']}   from branch: {info['branch']}   secret-scan hooks: {info['hooks']}   gh login: {'yes' if info['gh'] else 'NO'}{Fore.RESET}")
     if info['hooks'] == '(none)':
         print(f"{Fore.RED}  No secret-scan hooks are wired in this repo - refusing to push. Run: git config core.hooksPath scripts/git-hooks{Fore.RESET}\n")
         return path
     try:
-        ans = input(f"{Fore.LIGHTGREEN_EX}Push and open the PR now? [y/N]: {Fore.RESET}").strip().lower()
+        ans = input(f"{Fore.LIGHTGREEN_EX}Publish now? [y/N]: {Fore.RESET}").strip().lower()
     except (KeyboardInterrupt, EOFError):
         ans = "n"
     if ans != "y":
         print(f"{Fore.LIGHTBLACK_EX}Not published. You can publish later from the WHAT'S NEXT menu.{Fore.RESET}\n")
         return path
+
+    # 1) Branch + commit (write-up + hunt index) + push + PR
     try:
         index_path = PUBLISH.update_index(REPORT_GENERATOR.index_entry(state), root=root)
         print(f"{Fore.LIGHTBLACK_EX}Index entry added to {os.path.relpath(index_path, root)}{Fore.RESET}")
-        url = PUBLISH.publish(path, title=state.get('project_name') or filename, root=root, extra_paths=[index_path])
+        url, branch = PUBLISH.publish(path, title=state.get('project_name') or filename, root=root, extra_paths=[index_path])
         state['writeup_pr'] = url
         session.save_state()
-        print(f"\n{Fore.LIGHTGREEN_EX}✓ Pull request: {url}{Fore.RESET}\n")
+        print(f"{Fore.LIGHTGREEN_EX}✓ Pull request: {url}{Fore.RESET}")
     except PUBLISH.PublishError as e:
         print(f"\n{Fore.RED}Publish failed:{Fore.RESET}\n{e}\n")
+        return path
+
+    # 2) Merge it onto main - if this fails the PR stays open; say so and stop here
+    try:
+        PUBLISH.merge(branch, root=root)
+        state['writeup_merged'] = True
+        session.save_state()
+        print(f"{Fore.LIGHTGREEN_EX}✓ Merged onto main.{Fore.RESET}")
+    except PUBLISH.PublishError as e:
+        print(f"\n{Fore.YELLOW}Pushed and opened the pull request, but it could not be merged automatically:{Fore.RESET}\n{e}")
+        print(f"{Fore.WHITE}The pull request is still open - merge it yourself: {url}{Fore.RESET}\n")
+        return path
+
+    # 3) Profile page - the one-liner comes from the SAME narrative draft, no second LLM call
+    try:
+        bullet = REPORT_GENERATOR.profile_bullet(facts, nar)
+        profile_path = PUBLISH.update_profile_page(bullet)
+        state['profile_updated'] = True
+        session.save_state()
+        print(f"{Fore.LIGHTGREEN_EX}✓ Profile page updated: {profile_path}{Fore.RESET}\n")
+    except PUBLISH.PublishError as e:
+        print(f"\n{Fore.YELLOW}Published and merged, but the profile page could not be updated automatically:{Fore.RESET}\n{e}\n")
     return path
 
 
