@@ -1,8 +1,9 @@
-<img width="1110" height="72" alt="image" src="https://github.com/user-attachments/assets/95a9eab7-e571-4014-80c0-f9f314ced681" />
-
 # 🌉 Threat Hunt SAGA#3: Bridge Takeover
 
+<img width="740" height="1110" alt="BRIDGE TAKEOVER" src="https://github.com/user-attachments/assets/900fcdf7-d433-46fb-ae49-ef8b2673bd70" />
+
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
+**Hunt Design Master:** Mohammed A  
 **Loyal Wingbot:** [MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
