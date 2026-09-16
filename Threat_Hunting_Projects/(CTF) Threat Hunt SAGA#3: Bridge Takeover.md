@@ -1,6 +1,6 @@
-<img width="1110" height="72" alt="image" src="https://github.com/user-attachments/assets/95a9eab7-e571-4014-80c0-f9f314ced681" /># 🌉 Threat Hunt SAGA#3: Bridge Takeover
+<img width="1110" height="72" alt="image" src="https://github.com/user-attachments/assets/95a9eab7-e571-4014-80c0-f9f314ced681" />
 
-<!-- cover image: upload to the PR and paste the <img> line here -->
+# 🌉 Threat Hunt SAGA#3: Bridge Takeover
 
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
 **Loyal Wingbot:** [MixLocalAgentic_SOC_Analyst](https://github.com/Panbear1983/Multi-Funtion_SOC_Agent_Research/tree/main/openAI_Agentic_SOC_Analyst)
@@ -18,7 +18,7 @@ Frameworks Applied: ***MITRE ATT&CK***, ***NIST 800-61***
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## 📄 Overview
-<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->
+
 An attacker reached the administrative workstation azuki-adminpc on 25 November 2025 by moving laterally over RDP from 10.1.0.204, an address outside the host's own subnet, using the legitimate account yuki.tanaka. Once on the host, the attacker downloaded a 7-Zip archive disguised as a Windows security update from the public file host litter.catbox.moe, extracted it with a password into a cache folder under C:\Windows\Temp, and ran a Meterpreter implant that established command and control over a named pipe. Persistence was secured by creating a lookalike local account, yuki.tanaka2, and promoting it to the local Administrators group using Base64-encoded PowerShell. The attacker then enumerated sessions, domain trusts and network connections, hunted for KeePass password databases, stole browser and vault credentials, staged banking and contract documents in a hidden directory, and uploaded eight archives to the cloud storage service gofile.io.
 
 The tradecraft was competent but not novel. Everything relied on living-off-the-land binaries already present on Windows — curl.exe, 7z.exe, qwinsta.exe, nltest.exe, NETSTAT.EXE, Robocopy.exe and tar.exe — combined with two publicly available offensive tools, Meterpreter and Mimikatz, the latter renamed to m.exe to blunt name-based detection. Blending in was the priority: the payload carried a plausible KB number, staging happened inside a legitimate-looking Crypto directory under ProgramData, the backdoor account mimicked the compromised user, and command lines were Base64-encoded. Exfiltration used ordinary HTTPS to a consumer file-sharing site, which would look unremarkable in proxy logs without content inspection.
@@ -26,7 +26,7 @@ The tradecraft was competent but not novel. Everything relied on living-off-the-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## 💠 Diamond Model Analysis
-<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->
+
 | Feature | Details |
 |---|---|
 | **Adversary** | An unattributed, financially motivated actor operating hands-on-keyboard through RDP as yuki.tanaka, prioritising credential theft and rapid collection of banking and contract documents over stealth or long-term dwell. |
@@ -71,7 +71,7 @@ The tradecraft was competent but not novel. Everything relied on living-off-the-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## ⛨ Remediation Actions
-<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->
+
 1. **Contain the compromised host and accounts**
    - Isolate azuki-adminpc from the network and reimage it rather than cleaning in place, given meterpreter.exe ran with administrative rights.
    - Disable the yuki.tanaka account, force a password reset, and delete the backdoor account yuki.tanaka2 along with its membership in the local Administrators group.
@@ -103,7 +103,7 @@ The tradecraft was competent but not novel. Everything relied on living-off-the-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## ✍️ Lessons Learned
-<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->
+
 - **Valid credentials defeat perimeter controls:** the entire intrusion started with a legitimate account logging on over RDP, so no exploit or malware detection had a chance to fire at the entry point.
 - **Subnet mismatch is a cheap, high-value signal:** logons to a 10.0.8.x host originating from 10.1.0.204 stood out immediately and should be an automatic alert rather than an analyst observation.
 - **Living-off-the-land binaries carried most of the attack:** curl.exe, 7z.exe, nltest.exe, NETSTAT.EXE, Robocopy.exe and tar.exe are all signed Microsoft-shipped tools, so detection has to focus on command-line arguments rather than file reputation.
@@ -114,7 +114,7 @@ The tradecraft was competent but not novel. Everything relied on living-off-the-
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
 
 ## 🏔️ Conclusion
-<!-- DRAFT (AI-written from session facts) - review and edit before publishing -->
+
 The intrusion followed a clean, linear chain: RDP lateral movement from 10.1.0.204 using the valid account yuki.tanaka → landing on azuki-adminpc → curl.exe pulling a fake Windows update archive (KB5044273-x64.7z) from litter.catbox.moe → 7z.exe extracting the password-protected archive into C:\Windows\Temp\cache → meterpreter.exe executing and opening the named pipe \Device\NamedPipe\msf-pipe-5902 for C2 → Base64-obfuscated PowerShell creating the backdoor account yuki.tanaka2 and adding it to Administrators → discovery with qwinsta.exe, nltest.exe, NETSTAT.EXE and a recursive search for .kdbx files → credential theft using a second curl download (m-temp.7z) and Mimikatz renamed to m.exe against Chrome's Login Data → collection via Robocopy.exe into C:\ProgramData\Microsoft\Crypto\staging, producing 8 archives → exfiltration with curl.exe POST uploads to gofile.io at 45.112.123.227, including credentials.tar.gz containing the KeePass vault and KeePass-Master-Password.txt.
 
 <hr style="height: 4px; background-color: grey; border: none; margin-top: 40px;">
