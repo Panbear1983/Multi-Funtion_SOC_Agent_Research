@@ -4,7 +4,17 @@ A comprehensive collection of Capture The Flag (CTF) threat hunting exercises do
 
 ## 📚 Threat Hunt Reports
 
-### 1. 🌉 [Threat Hunt SAGA#3: Bridge Takeover](./%28CTF%29%20Threat%20Hunt%20SAGA%233%3A%20Bridge%20Takeover.md)
+### 1. 🚩 [Virtual Machine Compromise (Dead In The Water)](./%28CTF%29%20Virtual%20Machine%20Compromise%20%28Dead%20In%20The%20Water%29.md)
+**Date Completed:** 2026-09-16  
+**Environment:** Cyber Range AZURE LAW  
+**Focus:** Lateral Movement, Credential Access, Discovery, Command and Control, Impact, Execution, Defense Evasion  
+**Flags:** 26
+
+Investigate a Suspected Intrusion on a Cloud Virtual Machine!
+
+---
+
+### 2. 🌉 [Threat Hunt SAGA#3: Bridge Takeover](./%28CTF%29%20Threat%20Hunt%20SAGA%233%3A%20Bridge%20Takeover.md)
 **Date Completed:** 2026-09-05  
 **Environment:** Cyber Range AZURE LAW  
 **Focus:** RDP pivot to the admin PC, disguised payload staging, Meterpreter C2 over a named pipe, Base64-encoded backdoor account, discovery, KeePass and browser credential theft, cloud exfiltration  
@@ -14,7 +24,7 @@ Five days after the file server breach the attacker returned, pivoting over RDP 
 
 ---
 
-### 2. 🚢 [Threat Hunt SAGA#2: Cargo Hold](./%28CTF%29%20Threat%20Hunt%20SAGA%232%3A%20Cargo%20Hold.md)
+### 3. 🚢 [Threat Hunt SAGA#2: Cargo Hold](./%28CTF%29%20Threat%20Hunt%20SAGA%232%3A%20Cargo%20Hold.md)
 **Date Completed:** 2026-02-14  
 **Environment:** Cyber Range AZURE LAW  
 **Focus:** Return access, share discovery, staging, credential dumping, cloud exfiltration  
@@ -24,7 +34,7 @@ A focused intrusion on an Azuki file server featuring RDP pivoting, share enumer
 
 ---
 
-### 3. 🚪 [Threat Hunt SAGA#1: Port of Entry](./%28CTF%29%20Threat%20Hunt%20SAGA%231%3A%20Port%20of%20Entry.md)
+### 4. 🚪 [Threat Hunt SAGA#1: Port of Entry](./%28CTF%29%20Threat%20Hunt%20SAGA%231%3A%20Port%20of%20Entry.md)
 **Date Completed:** 2025-11-20  
 **Environment:** Cyber Range AZURE LAW  
 **Threat Actor:** JADE SPIDER (APT-SL44, SilentLynx)  
@@ -35,7 +45,7 @@ A sophisticated attack chain targeting Azuki Import/Export Trading Co. involving
 
 ---
 
-### 4. 💬 [Assistance](./%28CTF%29%20Assistance.md)
+### 5. 💬 [Assistance](./%28CTF%29%20Assistance.md)
 **Date Completed:** 2025-10-09  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** Remote assistance masquerading, PowerShell abuse, persistence mechanisms  
@@ -45,7 +55,7 @@ An investigation into suspicious remote assistance activity that revealed a comp
 
 ---
 
-### 5. 🥷🏿 [Lurker Re-emerges](./%28CTF%29%20Lurker.md)
+### 6. 🥷🏿 [Lurker Re-emerges](./%28CTF%29%20Lurker.md)
 **Date Completed:** 2025-07-13  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** PowerShell abuse, LOLBins, lateral movement, cloud exfiltration  
@@ -55,7 +65,7 @@ A multi-phase attack starting with PowerShell abuse and LOLBins, escalating to t
 
 ---
 
-### 6. 🖳 [Hide Your RDP: Password Spray Leads to Full Compromise](./%28CTF%29%20RDP%20Password%20Spray.md)
+### 7. 🖳 [Hide Your RDP: Password Spray Leads to Full Compromise](./%28CTF%29%20RDP%20Password%20Spray.md)
 **Date Completed:** 2025-09-08  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** Password spraying, RDP compromise, persistence, data exfiltration  
@@ -65,7 +75,7 @@ A password spray attack against an internet-exposed RDP endpoint leading to full
 
 ---
 
-### 7. 🧾 [Papertrail — Insider HR Tamper](./%28CTF%29%20Papertrail.md)
+### 8. 🧾 [Papertrail — Insider HR Tamper](./%28CTF%29%20Papertrail.md)
 **Date Completed:** 2025-09-08  
 **Environment:** LOG(N) Pacific - Cyber Range 1  
 **Focus:** Insider threat, HR data manipulation, credential dumping, anti-forensics  
