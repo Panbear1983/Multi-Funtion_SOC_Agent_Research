@@ -101,10 +101,16 @@ class SessionMemory:
         if correlation:
             flag_data["correlation"] = correlation
         
-        # Add to captured flags
-        self.state["flags_captured"].append(flag_data)
+        # Redo of an already-captured flag replaces its record instead of duplicating it.
+        existing_idx = next((i for i, f in enumerate(self.state["flags_captured"])
+                             if f.get("flag_number") == flag_number), None)
+        if existing_idx is not None:
+            self.state["flags_captured"][existing_idx] = flag_data
+        else:
+            self.state["flags_captured"].append(flag_data)
         self.state["flags_completed"] = len(self.state["flags_captured"])
-        self.state["current_flag"] = flag_number + 1
+        # Don't move the pointer backward when redoing an earlier flag.
+        self.state["current_flag"] = max(self.state.get("current_flag", 1), flag_number + 1)
         
         # Update accumulated IOCs based on answer type
         self._accumulate_iocs(answer, flag_number, title)

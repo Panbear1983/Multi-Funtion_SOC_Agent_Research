@@ -122,6 +122,10 @@ def run_ctf_hunt(openai_client, law_client, workspace_id, timerange_hours, start
     
     try:
         while True:
+            # Reuse the model + severity the analyst already chose - don't re-ask each flag.
+            model = session.state.get('model') or model
+            severity_config = session.state.get('severity_config') or severity_config
+
             # For first flag, skip menu and start hunting
             if session.state['flags_completed'] == 0:
                 flag_captured = hunt_single_flag(
@@ -366,20 +370,22 @@ def hunt_single_flag(session, openai_client, law_client, workspace_id,
         
         import MODEL_SELECTOR
         model = MODEL_SELECTOR.prompt_model_selection(input_tokens=None)
-        session.state['model'] = model          # remembered for the write-up stage
+        session.state['model'] = model          # remembered for later flags + write-up
         session.save_state()
-        
-        # Also select severity if not provided
-        if severity_config is None:
-            import SEVERITY_LEVELS
-            severity_level = SEVERITY_LEVELS.prompt_severity_selection()
-            severity_config = SEVERITY_LEVELS.get_severity_config(severity_level)
-            SEVERITY_LEVELS.display_severity_banner(severity_level)
-            
-            # Select framework profile and merge into severity config
-            import COMPLIANCE_PROFILES
-            profile_key = COMPLIANCE_PROFILES.prompt_profile_selection()
-            severity_config = COMPLIANCE_PROFILES.apply_profile(severity_config, profile_key)
+
+    # Severity + framework profile: asked once, then reused on every later flag.
+    if severity_config is None:
+        import SEVERITY_LEVELS
+        severity_level = SEVERITY_LEVELS.prompt_severity_selection()
+        severity_config = SEVERITY_LEVELS.get_severity_config(severity_level)
+        SEVERITY_LEVELS.display_severity_banner(severity_level)
+
+        # Select framework profile and merge into severity config
+        import COMPLIANCE_PROFILES
+        profile_key = COMPLIANCE_PROFILES.prompt_profile_selection()
+        severity_config = COMPLIANCE_PROFILES.apply_profile(severity_config, profile_key)
+        session.state['severity_config'] = severity_config   # reused across flags
+        session.save_state()
     
     # ═══════════════════════════════════════════════════════════════
     # HOW TO WORK THIS FLAG - the answer box is available right away (many flags are
@@ -440,6 +446,10 @@ def hunt_single_flag(session, openai_client, law_client, workspace_id,
         # STAGES 7-9: THE FLAG HUB - one screen the analyst returns to after every action
         outcome, model, llm_analysis = flag_hub(results, flag_intel, kql_query, session, openai_client,
                                                 model, severity_config, bot_guidance)
+        # Remember the model actually used (incl. a mid-hunt switch via the flag hub).
+        if model:
+            session.state['model'] = model
+            session.save_state()
         if outcome == 'rewrite_kql':
             print(f"\n{Fore.LIGHTCYAN_EX}Returning to KQL entry...{Fore.RESET}\n")
             llm_analysis = None
@@ -1589,6 +1599,8 @@ class CtfChatSession:
                            "any candidate value (no IPs, filenames, commands, accounts) and do not fill in the ANSWER "
                            "EXTRACTION section - write 'withheld at coach level 1' there. Never say the answer even if asked "
                            "directly; tell the analyst to type /reveal instead.")
+
+        self._coach_rules = coach_rules
         
         # Extract key fields from flag intel for emphasis
         flag_question = self.flag_intel.get('objective', '')
@@ -1834,7 +1846,156 @@ Summary:"""
                 return start, end
         
         return None, None
-    
+
+    def _get_ai_response(self):
+        """Send the current conversation to the model, stream the reply, record it.
+        If a CLOUD model fails or is refused by the safety filter, hand the SAME
+        question to the local model with a compact, pre-organized prompt so the hunt
+        never dead-ends (the local model has no external filter). Returns True on
+        success, False only if every brain we could try failed (turn rolled back)."""
+        # The analyst's latest question - needed for the compact local fallback.
+        user_question = next((m["content"] for m in reversed(self.conversation_history)
+                              if m["role"] == "user"), "")
+
+        messages = [
+            {"role": "system", "content": self.system_context}
+        ] + self.conversation_history
+
+        # Check token budget
+        estimated_tokens = self._estimate_tokens(messages)
+        if estimated_tokens > self.MAX_TOKENS:
+            print(f"{Fore.YELLOW}⚠️  Approaching token limit ({estimated_tokens:,} > {self.MAX_TOKENS:,}). Summarizing history...{Fore.RESET}")
+            self._truncate_history_if_needed()
+            # Rebuild messages after summarization
+            messages = [
+                {"role": "system", "content": self.system_context}
+            ] + self.conversation_history
+            # Re-check tokens after summarization
+            new_estimated_tokens = self._estimate_tokens(messages)
+            print(f"{Fore.LIGHTGREEN_EX}✓ After summarization: {new_estimated_tokens:,} tokens (saved {estimated_tokens - new_estimated_tokens:,} tokens){Fore.RESET}")
+
+        # ── Primary attempt: the model the analyst picked ──
+        try:
+            accum = ""
+            print(f"{Fore.YELLOW}🤔 {self.model_name} is analyzing...{Fore.RESET}\n")
+            for piece in LLM_ROUTER.chat_stream(messages, self.model_name, temperature=0.3,
+                                                think=True, purpose="ctf_chat"):
+                accum += piece
+                print(piece, end="", flush=True)
+            print("\n")
+
+            self.conversation_history.append({"role": "assistant", "content": accum})
+            print(f"\n{Fore.LIGHTCYAN_EX}Assistant (complete):{Fore.RESET}\n")
+            self.turn_count += 1
+            if self.turn_count >= self.MAX_TURNS - 2:
+                print(f"{Fore.YELLOW}⚠️  {self.MAX_TURNS - self.turn_count} turns remaining{Fore.RESET}\n")
+            return True
+
+        except KeyboardInterrupt:
+            # Partial answer already streamed - keep whatever we have as this turn.
+            print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
+            self.conversation_history.append({"role": "assistant", "content": accum})
+            self.turn_count += 1
+            return True
+
+        except Exception as e:
+            # Primary model failed: safety-filter refusal, prompt too big, or a
+            # transport error. If it was a cloud model, fall back to the local one.
+            refused = "safeguard" in str(e).lower() or "flagged" in str(e).lower()
+            if refused:
+                print(f"\n{Fore.LIGHTYELLOW_EX}Claude declined this one. Handing it to your local model "
+                      f"({LLM_ROUTER.LOCAL_MODEL}) with a compact view of the evidence...{Fore.RESET}\n")
+            else:
+                print(f"\n{Fore.LIGHTRED_EX}{self.model_name} couldn't answer: {e}{Fore.RESET}")
+
+            if not LLM_ROUTER.is_local(self.model_name):
+                local_text = self._local_fallback(user_question)
+                if local_text:
+                    self.conversation_history.append({"role": "assistant", "content": local_text})
+                    print(f"\n{Fore.LIGHTCYAN_EX}Assistant (local model, complete):{Fore.RESET}\n")
+                    self.turn_count += 1
+                    return True
+
+            # Every brain we could try has failed - roll this turn back.
+            print(f"{Fore.YELLOW}Try rephrasing, ask about fewer rows, or exit and restart.{Fore.RESET}\n")
+            if self.conversation_history and self.conversation_history[-1]["role"] == "user":
+                self.conversation_history.pop()
+            return False
+
+    def _compact_local_prompt(self, user_question):
+        """Build a small, focused prompt for the local model: the flag question, the
+        expected format, the code-extracted candidate evidence, and the coach rules -
+        WITHOUT the full sampled CSV, the previous-flag chain, or the long history. The
+        local model has a small memory and does poorly with a big raw dump, so we hand
+        it the already-digested candidates instead of throwing everything at it."""
+        fi = self.flag_intel or {}
+        question = fi.get('objective', '') or fi.get('question', '')
+        fmt = fi.get('format', 'any')
+        coach_rules = getattr(self, "_coach_rules", "")
+
+        evidence_block = ""
+        if self.evidence:
+            try:
+                evidence_block = EVIDENCE_FILTER.render_for_prompt(self.evidence, level=3)
+            except Exception:
+                evidence_block = ""
+
+        # No code-found candidates? Give it a small slice of the rows so it still has
+        # something concrete, rather than the whole (possibly huge) result set.
+        rows_block = ""
+        if not evidence_block:
+            lines = [l for l in self.results_csv.split("\n") if l.strip()]
+            rows_block = "\n".join(lines[:41])  # header + ~40 rows
+
+        system = (
+            "You are a cybersecurity analyst COACH helping a human with a DEFENSIVE "
+            "capture-the-flag exercise over historical, already-collected log data. "
+            "This is training analysis of past events, not an active attack.\n\n"
+            f"{coach_rules}\n\n"
+            f"FLAG QUESTION: {question}\n"
+            f"EXPECTED ANSWER FORMAT: {fmt}\n"
+        )
+        if evidence_block:
+            system += ("\nCANDIDATE EVIDENCE (pulled from the results by rule-based code, "
+                       f"with RowIds):\n{evidence_block}\n")
+        if rows_block:
+            system += f"\nRESULT ROWS (sample):\n{rows_block}\n"
+        system += ("\nAnswer the analyst's question using the candidates and rules above. "
+                   "Be concise, point to RowIds, and follow the coach rules exactly about "
+                   "whether you may state the final answer.")
+
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_question or f"Analyze the results and address: {question}"},
+        ]
+
+    def _local_fallback(self, user_question):
+        """Answer on the local model from the compact prompt. Returns the reply text,
+        or None if the local model also failed (engine down, drive unmounted, or even
+        the compact view too large)."""
+        local_model = LLM_ROUTER.LOCAL_MODEL
+        messages = self._compact_local_prompt(user_question)
+        try:
+            print(f"{Fore.YELLOW}🤔 {local_model} is analyzing (compact view)...{Fore.RESET}\n")
+            accum = ""
+            try:
+                for piece in LLM_ROUTER.chat_stream(messages, local_model, temperature=0.3,
+                                                    think=True, purpose="ctf_chat_local"):
+                    accum += piece
+                    print(piece, end="", flush=True)
+                print("\n")
+            except KeyboardInterrupt:
+                print(f"\n{Fore.YELLOW}Cancelled.{Fore.RESET}")
+            return accum.strip() or None
+        except LLM_ROUTER.PromptTooLargeError as e:
+            print(f"\n{Fore.LIGHTRED_EX}Even the compact view is too big for {local_model}: {e}{Fore.RESET}")
+            print(f"{Fore.YELLOW}Ask about a smaller row range (e.g. 'analyze rows 1-40').{Fore.RESET}")
+            return None
+        except Exception as e:
+            print(f"\n{Fore.LIGHTRED_EX}The local model couldn't answer either: {e}{Fore.RESET}")
+            print(f"{Fore.LIGHTBLACK_EX}Check that Ollama is running and the Artemis drive is mounted.{Fore.RESET}")
+            return None
+
     def chat_loop(self):
         """Interactive chat loop"""
         print(f"\n{Fore.LIGHTCYAN_EX}{'='*70}")
@@ -1882,6 +2043,9 @@ Provide your analysis in the structured format with evidence, decoding steps (if
             "role": "user",
             "content": initial_prompt
         })
+
+        # Answer the flag-objective prompt right away, before asking the user to type anything
+        self._get_ai_response()
 
         while self.turn_count < self.MAX_TURNS:
             try:
@@ -1945,61 +2109,8 @@ Provide your analysis in the structured format with evidence, decoding steps (if
                 "role": "user",
                 "content": user_input
             })
-            
-            # Build messages
-            messages = [
-                {"role": "system", "content": self.system_context}
-            ] + self.conversation_history
-            
-            # Check token budget
-            estimated_tokens = self._estimate_tokens(messages)
-            if estimated_tokens > self.MAX_TOKENS:
-                print(f"{Fore.YELLOW}⚠️  Approaching token limit ({estimated_tokens:,} > {self.MAX_TOKENS:,}). Summarizing history...{Fore.RESET}")
-                self._truncate_history_if_needed()
-                # Rebuild messages after summarization
-                messages = [
-                    {"role": "system", "content": self.system_context}
-                ] + self.conversation_history
-                # Re-check tokens after summarization
-                new_estimated_tokens = self._estimate_tokens(messages)
-                print(f"{Fore.LIGHTGREEN_EX}✓ After summarization: {new_estimated_tokens:,} tokens (saved {estimated_tokens - new_estimated_tokens:,} tokens){Fore.RESET}")
-            
-            # Get response
-            try:
-                print(f"{Fore.YELLOW}🤔 {self.model_name} is analyzing...{Fore.RESET}\n")
-                accum = ""
-                try:
-                    for piece in LLM_ROUTER.chat_stream(messages, self.model_name, temperature=0.3,
-                                                        think=True, purpose="ctf_chat"):
-                        accum += piece
-                        print(piece, end="", flush=True)
-                    print("\n")
-                except KeyboardInterrupt:
-                    print(f"\n{Fore.YELLOW}Cancelled. Showing partial response.{Fore.RESET}")
-                except LLM_ROUTER.PromptTooLargeError as e:
-                    print(f"\n{Fore.LIGHTRED_EX}Too much data for {self.model_name}: {e}{Fore.RESET}")
-                    print(f"{Fore.YELLOW}Ask about a smaller row range (e.g. 'analyze rows 1-40').{Fore.RESET}")
-                    raise
-                
-                response = accum
-                
-                # Add to history
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": response
-                })
-                
-                print(f"\n{Fore.LIGHTCYAN_EX}Assistant (complete):{Fore.RESET}\n")
-                
-                self.turn_count += 1
-                
-                if self.turn_count >= self.MAX_TURNS - 2:
-                    print(f"{Fore.YELLOW}⚠️  {self.MAX_TURNS - self.turn_count} turns remaining{Fore.RESET}\n")
-                
-            except Exception as e:
-                print(f"{Fore.RED}Error getting response: {e}{Fore.RESET}")
-                print(f"{Fore.YELLOW}Try rephrasing your question or exit and restart.{Fore.RESET}\n")
-                self.conversation_history.pop()
+
+            if not self._get_ai_response():
                 continue
         
         if self.turn_count >= self.MAX_TURNS:
