@@ -1,4 +1,4 @@
-# 🚩 Virtual Machine Compromise (Dead In The Water)
+# 🚩 Threat Hunt SAGA#4: Dead In The Water
 
 <!-- cover image: upload to the PR and paste the <img> line here -->
 

@@ -4,7 +4,7 @@ A comprehensive collection of Capture The Flag (CTF) threat hunting exercises do
 
 ## 📚 Threat Hunt Reports
 
-### 1. 🚩 [Virtual Machine Compromise (Dead In The Water)](./%28CTF%29%20Virtual%20Machine%20Compromise%20%28Dead%20In%20The%20Water%29.md)
+### 1. 🚩 [Threat Hunt SAGA#4: Dead In The Water](./%28CTF%29%20Threat%20Hunt%20SAGA%234%3A%20Dead%20In%20The%20Water.md)
 **Date Completed:** 2026-09-16  
 **Environment:** Cyber Range AZURE LAW  
 **Focus:** Lateral Movement, Credential Access, Discovery, Command and Control, Impact, Execution, Defense Evasion  
